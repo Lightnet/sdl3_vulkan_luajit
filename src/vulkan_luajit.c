@@ -18,6 +18,7 @@ typedef struct {
 
 typedef struct {
     VkDevice device;
+    VkPhysicalDevice physicalDevice;
 } VulkanDevice;
 
 typedef struct {
@@ -32,9 +33,15 @@ typedef struct {
 
 typedef struct {
   VkFramebuffer framebuffer;
-  VkImageView imageView;  // Add this to keep the image view alive
+  VkImageView imageView;
   VkDevice device;
 } VulkanFramebuffer;
+
+typedef struct {
+  VkBuffer buffer;
+  VkDeviceMemory memory;
+  VkDevice device;
+} VulkanBuffer;
 
 typedef struct {
     VkShaderModule shaderModule;
@@ -66,6 +73,168 @@ typedef struct {
   VkFence fence;
   VkDevice device;
 } VulkanFence;
+
+typedef struct {
+  VkDescriptorPool pool;
+  VkDevice device;
+} VulkanDescriptorPool;
+
+typedef struct {
+  VkDescriptorSet set;
+  VkDevice device;
+} VulkanDescriptorSet;
+
+
+static int l_vulkan_VK_CreateDescriptorPool(lua_State *L) {
+  VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  luaL_checktype(L, 2, LUA_TTABLE);
+
+  lua_getfield(L, 2, "maxSets");
+  uint32_t maxSets = (uint32_t)luaL_checkinteger(L, -1);
+  lua_pop(L, 1);
+
+  lua_getfield(L, 2, "poolSizes");
+  luaL_checktype(L, -1, LUA_TTABLE);
+  uint32_t poolSizeCount = lua_objlen(L, -1);
+  if (poolSizeCount == 0) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Pool sizes table is empty");
+      return 2;
+  }
+
+  VkDescriptorPoolSize *poolSizes = (VkDescriptorPoolSize *)malloc(poolSizeCount * sizeof(VkDescriptorPoolSize));
+  if (!poolSizes) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to allocate memory for pool sizes");
+      return 2;
+  }
+
+  for (uint32_t i = 1; i <= poolSizeCount; i++) {
+      lua_rawgeti(L, -1, i);
+      lua_getfield(L, -1, "type");
+      poolSizes[i-1].type = (VkDescriptorType)luaL_checkinteger(L, -1);
+      lua_pop(L, 1);
+      lua_getfield(L, -1, "descriptorCount");
+      poolSizes[i-1].descriptorCount = (uint32_t)luaL_checkinteger(L, -1);
+      lua_pop(L, 2);
+  }
+  lua_pop(L, 1);
+
+  VkDescriptorPoolCreateInfo poolInfo = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .maxSets = maxSets,
+      .poolSizeCount = poolSizeCount,
+      .pPoolSizes = poolSizes
+  };
+
+  VkDescriptorPool pool;
+  VkResult result = vkCreateDescriptorPool(device_ptr->device, &poolInfo, NULL, &pool);
+  free(poolSizes);
+  if (result != VK_SUCCESS) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to create descriptor pool");
+      return 2;
+  }
+
+  VulkanDescriptorPool *pool_ptr = (VulkanDescriptorPool *)lua_newuserdata(L, sizeof(VulkanDescriptorPool));
+  pool_ptr->pool = pool;
+  pool_ptr->device = device_ptr->device;
+  luaL_getmetatable(L, "VulkanDescriptorPool");
+  if (lua_isnil(L, -1)) {
+      printf("Error: VulkanDescriptorPool metatable not found\n");
+      lua_pop(L, 1);
+      lua_pushnil(L);
+      lua_pushstring(L, "Metatable not found");
+      return 2;
+  }
+  lua_setmetatable(L, -2);
+  return 1;
+}
+
+
+
+static int l_vulkan_VK_DestroyDescriptorPool(lua_State *L) {
+  VulkanDescriptorPool *pool_ptr = (VulkanDescriptorPool *)luaL_checkudata(L, 1, "VulkanDescriptorPool");
+  if (pool_ptr->pool && pool_ptr->device) {
+      vkDestroyDescriptorPool(pool_ptr->device, pool_ptr->pool, NULL);
+      pool_ptr->pool = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+static int l_vulkan_VK_AllocateDescriptorSet(lua_State *L) {
+  VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanDescriptorPool *pool_ptr = (VulkanDescriptorPool *)luaL_checkudata(L, 2, "VulkanDescriptorPool");
+  VkDescriptorSetLayout layout = (VkDescriptorSetLayout)lua_touserdata(L, 3);
+
+  VkDescriptorSetAllocateInfo allocInfo = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+      .descriptorPool = pool_ptr->pool,
+      .descriptorSetCount = 1,
+      .pSetLayouts = &layout
+  };
+
+  VkDescriptorSet set;
+  VkResult result = vkAllocateDescriptorSets(device_ptr->device, &allocInfo, &set);
+  if (result != VK_SUCCESS) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to allocate descriptor set");
+      return 2;
+  }
+
+  VulkanDescriptorSet *set_ptr = (VulkanDescriptorSet *)lua_newuserdata(L, sizeof(VulkanDescriptorSet));
+  set_ptr->set = set;
+  set_ptr->device = device_ptr->device;
+  luaL_getmetatable(L, "VulkanDescriptorSet");
+  lua_setmetatable(L, -2);
+  return 1;
+}
+
+
+static int l_vulkan_VK_UpdateDescriptorSet(lua_State *L) {
+  VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanDescriptorSet *set_ptr = (VulkanDescriptorSet *)luaL_checkudata(L, 2, "VulkanDescriptorSet");
+  VulkanBuffer *buffer_ptr = (VulkanBuffer *)luaL_checkudata(L, 3, "VulkanBuffer");
+  VkDeviceSize offset = (VkDeviceSize)luaL_checkinteger(L, 4);
+  VkDeviceSize range = (VkDeviceSize)luaL_checkinteger(L, 5);
+
+  VkDescriptorBufferInfo bufferInfo = {
+      .buffer = buffer_ptr->buffer,
+      .offset = offset,
+      .range = range
+  };
+
+  VkWriteDescriptorSet descriptorWrite = {
+      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .dstSet = set_ptr->set,
+      .dstBinding = 0,
+      .dstArrayElement = 0,
+      .descriptorCount = 1,
+      .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .pBufferInfo = &bufferInfo
+  };
+
+  vkUpdateDescriptorSets(device_ptr->device, 1, &descriptorWrite, 0, NULL);
+  return 0;
+}
+
+
+static int l_vulkan_VK_CmdBindDescriptorSet(lua_State *L) {
+  VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
+  VulkanPipeline *pipeline_ptr = (VulkanPipeline *)luaL_checkudata(L, 2, "VulkanPipeline");
+  VulkanDescriptorSet *set_ptr = (VulkanDescriptorSet *)luaL_checkudata(L, 3, "VulkanDescriptorSet");
+  uint32_t firstSet = (uint32_t)luaL_checkinteger(L, 4);
+
+  if (!cmd_ptr->commandBuffer) {
+      luaL_error(L, "Invalid command buffer");
+      return 0;
+  }
+
+  vkCmdBindDescriptorSets(cmd_ptr->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_ptr->pipelineLayout, firstSet, 1, &set_ptr->set, 0, NULL);
+  return 0;
+}
+
+
 
 static int l_vulkan_VK_CreateInstanceHelper(lua_State *L) {
     SDL3Window *window_ptr = (SDL3Window *)luaL_checkudata(L, 1, "SDL3Window");
@@ -214,88 +383,77 @@ static int l_vulkan_VK_EnumeratePhysicalDevices(lua_State *L) {
     return 1;
 }
 
+
+
 static int l_vulkan_VK_GetPhysicalDeviceQueueFamilyProperties(lua_State *L) {
-    VkPhysicalDevice device = (VkPhysicalDevice)lua_touserdata(L, 1);
+  VkPhysicalDevice device = (VkPhysicalDevice)lua_touserdata(L, 1);
 
-    Uint32 queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, NULL);
-    if (queueFamilyCount == 0) {
-        lua_pushnil(L);
-        lua_pushstring(L, "No queue families found");
-        return 2;
-    }
+  Uint32 queueFamilyCount = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, NULL);
+  if (queueFamilyCount == 0) {
+      lua_pushnil(L);
+      lua_pushstring(L, "No queue families found");
+      return 2;
+  }
 
-    VkQueueFamilyProperties *queueFamilies = malloc(queueFamilyCount * sizeof(VkQueueFamilyProperties));
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
+  VkQueueFamilyProperties *queueFamilies = malloc(queueFamilyCount * sizeof(VkQueueFamilyProperties));
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
 
-    lua_newtable(L);
-    for (Uint32 i = 0; i < queueFamilyCount; i++) {
-        lua_pushinteger(L, i + 1);
-        lua_newtable(L);
-        lua_pushstring(L, "queueFlags");
-        lua_pushinteger(L, queueFamilies[i].queueFlags);
-        lua_settable(L, -3);
-        lua_pushstring(L, "queueCount");
-        lua_pushinteger(L, queueFamilies[i].queueCount);
-        lua_settable(L, -3);
-        lua_settable(L, -3);
-    }
-    free(queueFamilies);
-    return 1;
+  lua_newtable(L);
+  for (Uint32 i = 0; i < queueFamilyCount; i++) {
+      lua_pushinteger(L, i + 1);
+      lua_newtable(L);
+      lua_pushstring(L, "queueFlags");
+      lua_pushinteger(L, queueFamilies[i].queueFlags);
+      lua_settable(L, -3);
+      lua_pushstring(L, "queueCount");
+      lua_pushinteger(L, queueFamilies[i].queueCount);
+      lua_settable(L, -3);
+      lua_settable(L, -3);
+  }
+  free(queueFamilies);
+  return 1;
 }
+
+
 
 static int l_vulkan_VK_CreateDevice(lua_State *L) {
-    VkPhysicalDevice physicalDevice = (VkPhysicalDevice)lua_touserdata(L, 1);
-    luaL_checktype(L, 2, LUA_TTABLE);
+  VkPhysicalDevice physicalDevice = (VkPhysicalDevice)lua_touserdata(L, 1);
+  uint32_t queueFamilyIndex = (uint32_t)luaL_checkinteger(L, 2);
 
-    lua_getfield(L, 2, "queueFamilyIndex");
-    uint32_t queueFamilyIndex = (uint32_t)luaL_checkinteger(L, -1);
-    lua_pop(L, 1);
-    lua_getfield(L, 2, "queueCount");
-    uint32_t queueCount = (uint32_t)luaL_checkinteger(L, -1);
-    lua_pop(L, 1);
+  float queuePriority = 1.0f;
+  VkDeviceQueueCreateInfo queueCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+      .queueFamilyIndex = queueFamilyIndex,
+      .queueCount = 1,
+      .pQueuePriorities = &queuePriority
+  };
 
-    float *queuePriorities = malloc(queueCount * sizeof(float));
-    for (uint32_t i = 0; i < queueCount; i++) {
-        queuePriorities[i] = 1.0f;
-    }
+  const char *deviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+  VkDeviceCreateInfo createInfo = {
+      .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+      .queueCreateInfoCount = 1,
+      .pQueueCreateInfos = &queueCreateInfo,
+      .enabledExtensionCount = 1,
+      .ppEnabledExtensionNames = deviceExtensions
+  };
 
-    VkDeviceQueueCreateInfo queueCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = queueFamilyIndex,
-        .queueCount = queueCount,
-        .pQueuePriorities = queuePriorities
-    };
+  VkDevice device;
+  VkResult result = vkCreateDevice(physicalDevice, &createInfo, NULL, &device);
+  if (result != VK_SUCCESS) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to create logical device");
+      return 2;
+  }
 
-    const char *deviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-    VkDeviceCreateInfo createInfo = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &queueCreateInfo,
-        .enabledLayerCount = 0,
-        .ppEnabledLayerNames = NULL,
-        .enabledExtensionCount = 1,
-        .ppEnabledExtensionNames = deviceExtensions
-    };
-
-    VkDevice device;
-    VkResult result = vkCreateDevice(physicalDevice, &createInfo, NULL, &device);
-    free(queuePriorities);
-    if (result != VK_SUCCESS) {
-        lua_pushnil(L);
-        switch (result) {
-            case VK_ERROR_DEVICE_LOST: lua_pushstring(L, "Device lost"); break;
-            default: lua_pushstring(L, "Failed to create Vulkan device");
-        }
-        return 2;
-    }
-
-    VulkanDevice *device_ptr = (VulkanDevice *)lua_newuserdata(L, sizeof(VulkanDevice));
-    device_ptr->device = device;
-    luaL_getmetatable(L, "VulkanDevice");
-    lua_setmetatable(L, -2);
-    return 1;
+  VulkanDevice *device_ptr = (VulkanDevice *)lua_newuserdata(L, sizeof(VulkanDevice));
+  device_ptr->device = device;
+  device_ptr->physicalDevice = physicalDevice;  // Store physical device
+  luaL_getmetatable(L, "VulkanDevice");
+  lua_setmetatable(L, -2);
+  return 1;
 }
+
 
 static int l_vulkan_VK_DestroyDevice(lua_State *L) {
     VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
@@ -625,6 +783,108 @@ static int l_vulkan_VK_CreatePipelineLayout(lua_State *L) {
 
 
 
+static int l_vulkan_VK_CreateBuffer(lua_State *L) {
+  VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VkDeviceSize size = (VkDeviceSize)luaL_checkinteger(L, 2);
+
+  VkBufferCreateInfo bufferInfo = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      .size = size,
+      .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+  };
+
+  VulkanBuffer *buffer_ptr = (VulkanBuffer *)lua_newuserdata(L, sizeof(VulkanBuffer));
+  buffer_ptr->device = device_ptr->device;
+  VkResult result = vkCreateBuffer(device_ptr->device, &bufferInfo, NULL, &buffer_ptr->buffer);
+  if (result != VK_SUCCESS) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to create buffer");
+      return 2;
+  }
+
+  VkMemoryRequirements memRequirements;
+  vkGetBufferMemoryRequirements(device_ptr->device, buffer_ptr->buffer, &memRequirements);
+
+  // Get physical device memory properties
+  VkPhysicalDeviceMemoryProperties memProperties;
+  vkGetPhysicalDeviceMemoryProperties(device_ptr->physicalDevice, &memProperties);
+
+  // Find a suitable memory type
+  uint32_t memoryTypeIndex = UINT32_MAX;
+  for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+      if ((memRequirements.memoryTypeBits & (1 << i)) &&
+          (memProperties.memoryTypes[i].propertyFlags & 
+           (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) == 
+           (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+          memoryTypeIndex = i;
+          break;
+      }
+  }
+
+  if (memoryTypeIndex == UINT32_MAX) {
+      vkDestroyBuffer(device_ptr->device, buffer_ptr->buffer, NULL);
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to find suitable memory type");
+      return 2;
+  }
+
+  VkMemoryAllocateInfo allocInfo = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      .allocationSize = memRequirements.size,
+      .memoryTypeIndex = memoryTypeIndex
+  };
+
+  result = vkAllocateMemory(device_ptr->device, &allocInfo, NULL, &buffer_ptr->memory);
+  if (result != VK_SUCCESS) {
+      vkDestroyBuffer(device_ptr->device, buffer_ptr->buffer, NULL);
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to allocate buffer memory");
+      return 2;
+  }
+
+  vkBindBufferMemory(device_ptr->device, buffer_ptr->buffer, buffer_ptr->memory, 0);
+
+  luaL_getmetatable(L, "VulkanBuffer");
+  lua_setmetatable(L, -2);
+  return 1;
+}
+
+
+static int l_vulkan_VK_DestroyBuffer(lua_State *L) {
+  VulkanBuffer *buffer_ptr = (VulkanBuffer *)luaL_checkudata(L, 1, "VulkanBuffer");
+  if (buffer_ptr->buffer && buffer_ptr->device) {
+      vkDestroyBuffer(buffer_ptr->device, buffer_ptr->buffer, NULL);
+      buffer_ptr->buffer = VK_NULL_HANDLE;
+  }
+  if (buffer_ptr->memory && buffer_ptr->device) {
+      vkFreeMemory(buffer_ptr->device, buffer_ptr->memory, NULL);
+      buffer_ptr->memory = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+static int l_vulkan_VK_UpdateBuffer(lua_State *L) {
+  VulkanBuffer *buffer_ptr = (VulkanBuffer *)luaL_checkudata(L, 1, "VulkanBuffer");
+  luaL_checktype(L, 2, LUA_TTABLE);
+
+  lua_getfield(L, 2, "x");
+  float x = (float)luaL_checknumber(L, -1);
+  lua_pop(L, 1);
+  lua_getfield(L, 2, "y");
+  float y = (float)luaL_checknumber(L, -1);
+  lua_pop(L, 1);
+
+  float uniformData[2] = {x, y};
+  void* data;
+  vkMapMemory(buffer_ptr->device, buffer_ptr->memory, 0, sizeof(uniformData), 0, &data);
+  memcpy(data, uniformData, sizeof(uniformData));
+  vkUnmapMemory(buffer_ptr->device, buffer_ptr->memory);
+  return 0;
+}
+
+
+
 
 static int l_vulkan_VK_CreateGraphicsPipelines(lua_State *L) {
   VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
@@ -640,22 +900,42 @@ static int l_vulkan_VK_CreateGraphicsPipelines(lua_State *L) {
   uint32_t height = (uint32_t)luaL_checkinteger(L, -1);
   lua_pop(L, 1);
 
-  // Create a pipeline layout
-  VkPipelineLayoutCreateInfo layoutInfo = {
+  // Create descriptor set layout
+  VkDescriptorSetLayoutBinding uboLayoutBinding = {
+      .binding = 0,
+      .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .descriptorCount = 1,
+      .stageFlags = VK_SHADER_STAGE_VERTEX_BIT
+  };
+  VkDescriptorSetLayoutCreateInfo layoutInfo = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+      .bindingCount = 1,
+      .pBindings = &uboLayoutBinding
+  };
+  VkDescriptorSetLayout descriptorSetLayout;
+  VkResult result = vkCreateDescriptorSetLayout(device_ptr->device, &layoutInfo, NULL, &descriptorSetLayout);
+  if (result != VK_SUCCESS) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to create descriptor set layout");
+      return 2;
+  }
+
+  // Create pipeline layout with descriptor set
+  VkPipelineLayoutCreateInfo pipelineLayoutInfo = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-      .setLayoutCount = 0,
-      .pSetLayouts = NULL,
-      .pushConstantRangeCount = 0,
-      .pPushConstantRanges = NULL
+      .setLayoutCount = 1,
+      .pSetLayouts = &descriptorSetLayout
   };
   VkPipelineLayout pipelineLayout;
-  VkResult result = vkCreatePipelineLayout(device_ptr->device, &layoutInfo, NULL, &pipelineLayout);
+  result = vkCreatePipelineLayout(device_ptr->device, &pipelineLayoutInfo, NULL, &pipelineLayout);
   if (result != VK_SUCCESS) {
+      vkDestroyDescriptorSetLayout(device_ptr->device, descriptorSetLayout, NULL);
       lua_pushnil(L);
       lua_pushstring(L, "Failed to create pipeline layout");
       return 2;
   }
 
+  // Pipeline creation (unchanged except for layout)
   VkPipelineShaderStageCreateInfo vertShaderStageInfo = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
       .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -669,7 +949,6 @@ static int l_vulkan_VK_CreateGraphicsPipelines(lua_State *L) {
       .pName = "main"
   };
   VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
-
   VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
       .vertexBindingDescriptionCount = 0,
@@ -696,8 +975,7 @@ static int l_vulkan_VK_CreateGraphicsPipelines(lua_State *L) {
       .polygonMode = VK_POLYGON_MODE_FILL,
       .lineWidth = 1.0f,
       .cullMode = VK_CULL_MODE_BACK_BIT,
-      .frontFace = VK_FRONT_FACE_CLOCKWISE,
-      .depthBiasEnable = VK_FALSE
+      .frontFace = VK_FRONT_FACE_CLOCKWISE
   };
   VkPipelineMultisampleStateCreateInfo multisampling = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
@@ -724,7 +1002,7 @@ static int l_vulkan_VK_CreateGraphicsPipelines(lua_State *L) {
       .pRasterizationState = &rasterizer,
       .pMultisampleState = &multisampling,
       .pColorBlendState = &colorBlending,
-      .layout = pipelineLayout,  // Set the pipeline layout
+      .layout = pipelineLayout,
       .renderPass = renderPass_ptr->renderPass,
       .subpass = 0
   };
@@ -733,6 +1011,7 @@ static int l_vulkan_VK_CreateGraphicsPipelines(lua_State *L) {
   result = vkCreateGraphicsPipelines(device_ptr->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &pipeline);
   if (result != VK_SUCCESS) {
       vkDestroyPipelineLayout(device_ptr->device, pipelineLayout, NULL);
+      vkDestroyDescriptorSetLayout(device_ptr->device, descriptorSetLayout, NULL);
       lua_pushnil(L);
       lua_pushstring(L, "Failed to create graphics pipeline");
       return 2;
@@ -740,11 +1019,14 @@ static int l_vulkan_VK_CreateGraphicsPipelines(lua_State *L) {
 
   VulkanPipeline *pipeline_ptr = (VulkanPipeline *)lua_newuserdata(L, sizeof(VulkanPipeline));
   pipeline_ptr->pipeline = pipeline;
-  pipeline_ptr->pipelineLayout = pipelineLayout;  // Store the layout
+  pipeline_ptr->pipelineLayout = pipelineLayout;
   pipeline_ptr->device = device_ptr->device;
   luaL_getmetatable(L, "VulkanPipeline");
   lua_setmetatable(L, -2);
-  return 1;
+
+  // Store descriptorSetLayout in a global or return it if needed
+  lua_pushlightuserdata(L, (void*)descriptorSetLayout);
+  return 2;  // Return pipeline and descriptorSetLayout
 }
 
 
@@ -1184,7 +1466,30 @@ static int l_vulkan_VK_ResetFences(lua_State *L) {
   return 1;
 }
 
+static int l_vulkan_VK_DestroyDescriptorSetLayout(lua_State *L) {
+  VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VkDescriptorSetLayout layout = (VkDescriptorSetLayout)lua_touserdata(L, 2);
+  if (layout && device_ptr->device) {
+      vkDestroyDescriptorSetLayout(device_ptr->device, layout, NULL);
+  }
+  return 0;
+}
+
+// Add near other metatable definitions (e.g., after descriptorpool_mt)
+static int l_vulkan_VK_FreeDescriptorSet(lua_State *L) {
+  VulkanDescriptorSet *set_ptr = (VulkanDescriptorSet *)luaL_checkudata(L, 1, "VulkanDescriptorSet");
+  set_ptr->set = VK_NULL_HANDLE; // No vkFreeDescriptorSets call unless pool is tracked
+  return 0;
+}
+
+
 static const luaL_Reg vulkan_funcs[] = {
+    {"VK_DestroyDescriptorSetLayout", l_vulkan_VK_DestroyDescriptorSetLayout},
+    {"VK_CreateDescriptorPool", l_vulkan_VK_CreateDescriptorPool},
+    {"VK_DestroyDescriptorPool", l_vulkan_VK_DestroyDescriptorPool},
+    {"VK_AllocateDescriptorSet", l_vulkan_VK_AllocateDescriptorSet},
+    {"VK_UpdateDescriptorSet", l_vulkan_VK_UpdateDescriptorSet},
+    {"VK_CmdBindDescriptorSet", l_vulkan_VK_CmdBindDescriptorSet},
     {"VK_CreateInstanceHelper", l_vulkan_VK_CreateInstanceHelper},
     {"VK_DestroyInstance", l_vulkan_VK_DestroyInstance},
     {"SDL_Vulkan_CreateSurface", l_vulkan_SDL_Vulkan_CreateSurface},
@@ -1205,6 +1510,9 @@ static const luaL_Reg vulkan_funcs[] = {
     {"VK_CreateShaderModule", l_vulkan_VK_CreateShaderModule},
     {"VK_DestroyShaderModule", l_vulkan_VK_DestroyShaderModule},
     {"VK_CreatePipelineLayout", l_vulkan_VK_CreatePipelineLayout},
+    {"VK_CreateBuffer", l_vulkan_VK_CreateBuffer},
+    {"VK_DestroyBuffer", l_vulkan_VK_DestroyBuffer},
+    {"VK_UpdateBuffer", l_vulkan_VK_UpdateBuffer},
     {"VK_CreateGraphicsPipelines", l_vulkan_VK_CreateGraphicsPipelines},
     {"VK_DestroyPipeline", l_vulkan_VK_DestroyPipeline},
     {"VK_CreateCommandPool", l_vulkan_VK_CreateCommandPool},
@@ -1263,6 +1571,11 @@ static const luaL_Reg framebuffer_mt[] = {
     {NULL, NULL}
 };
 
+static const luaL_Reg buffer_mt[] = {
+  {"__gc", l_vulkan_VK_DestroyBuffer},
+  {NULL, NULL}
+};
+
 static const luaL_Reg shadermodule_mt[] = {
     {"__gc", l_vulkan_VK_DestroyShaderModule},
     {NULL, NULL}
@@ -1287,7 +1600,19 @@ static const luaL_Reg semaphore_mt[] = {
     {NULL, NULL}
 };
 
+static const luaL_Reg descriptorpool_mt[] = {
+  {"__gc", l_vulkan_VK_DestroyDescriptorPool},
+  {NULL, NULL}
+};
+
+static const luaL_Reg descriptorset_mt[] = {
+  {"__gc", l_vulkan_VK_FreeDescriptorSet},
+  {NULL, NULL}
+};
+
+
 int luaopen_vulkan(lua_State *L) {
+
     luaL_newmetatable(L, "VulkanInstance");
     luaL_setfuncs(L, instance_mt, 0);
     lua_pop(L, 1);
@@ -1312,6 +1637,10 @@ int luaopen_vulkan(lua_State *L) {
     luaL_setfuncs(L, framebuffer_mt, 0);
     lua_pop(L, 1);
 
+    luaL_newmetatable(L, "VulkanBuffer");
+    luaL_setfuncs(L, buffer_mt, 0);
+    lua_pop(L, 1);
+
     luaL_newmetatable(L, "VulkanShaderModule");
     luaL_setfuncs(L, shadermodule_mt, 0);
     lua_pop(L, 1);
@@ -1332,17 +1661,30 @@ int luaopen_vulkan(lua_State *L) {
     luaL_setfuncs(L, semaphore_mt, 0);
     lua_pop(L, 1);
 
-    // New fence metatable
     luaL_newmetatable(L, "VulkanFence");
     luaL_setfuncs(L, fence_mt, 0);
+    lua_pop(L, 1);
+
+    luaL_newmetatable(L, "VulkanDescriptorPool");
+    luaL_setfuncs(L, descriptorpool_mt, 0);
+    lua_pop(L, 1);
+
+    luaL_newmetatable(L, "VulkanDescriptorSet");
+    luaL_setfuncs(L, descriptorset_mt, 0);
     lua_pop(L, 1);
 
     luaL_newlib(L, vulkan_funcs);
     lua_pushinteger(L, VK_API_VERSION_1_4);
     lua_setfield(L, -2, "API_VERSION_1_4");
     lua_pushinteger(L, VK_QUEUE_GRAPHICS_BIT);
-    lua_setfield(L, -2, "QUEUE_GRAPHICS_BIT");
+    lua_setfield(L, -2, "VK_QUEUE_GRAPHICS_BIT");
+    lua_pushinteger(L, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    lua_setfield(L, -2, "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER");
     lua_pushstring(L, VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     lua_setfield(L, -2, "KHR_SWAPCHAIN_EXTENSION_NAME");
+
+    //printf("[[ VK_QUEUE_GRAPHICS_BIT ]]: %d\n", VK_QUEUE_GRAPHICS_BIT);
+
+
     return 1;
 }

@@ -1,6 +1,9 @@
 @echo off
 setlocal EnableDelayedExpansion
 
+set VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation
+echo %VK_INSTANCE_LAYERS%
+
 :: Set project root directory (where this script is located)
 set "PROJECT_ROOT=%~dp0"
 set "BUILD_DIR=%PROJECT_ROOT%build"

@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
     lua_getglobal(L, "package");
     lua_getfield(L, -1, "preload");
     lua_pushcfunction(L, luaopen_sdl3);
-    lua_setfield(L, -2, "sdl3");
+    lua_setfield(L, -2, "SDL");
     lua_pushcfunction(L, luaopen_vulkan);
     lua_setfield(L, -2, "vulkan");
     lua_pop(L, 2);  // Pop preload and package

@@ -52,13 +52,27 @@ static int l_sdl3_SDL_Quit(lua_State *L) {
 }
 
 static int l_sdl3_SDL_PollEvent(lua_State *L) {
-    SDL_Event event;
-    if (SDL_PollEvent(&event)) {
-        lua_pushinteger(L, event.type);
-        return 1;
-    }
-    lua_pushnil(L);
-    return 1;
+  SDL_Event *event = (SDL_Event *)lua_newuserdata(L, sizeof(SDL_Event));
+  if (SDL_PollEvent(event)) {
+      luaL_getmetatable(L, "SDL_Event");
+      if (lua_isnil(L, -1)) {
+          lua_pop(L, 1);
+          luaL_newmetatable(L, "SDL_Event");
+          lua_pushvalue(L, -1);
+          lua_setfield(L, -2, "__index");
+          // No __gc needed since this is transient userdata per poll
+      }
+      lua_setmetatable(L, -2);
+      return 1;
+  }
+  lua_pushnil(L);
+  return 1;
+}
+
+static int l_sdl3_SDL_GetEventType(lua_State *L) {
+  SDL_Event *event = (SDL_Event *)luaL_checkudata(L, 1, "SDL_Event");
+  lua_pushinteger(L, event->type);
+  return 1;
 }
 
 static int l_window_gc(lua_State *L) {
@@ -70,12 +84,32 @@ static int l_window_gc(lua_State *L) {
     return 0;
 }
 
+static int l_sdl3_SDL_GetKeyFromEvent(lua_State *L) {
+  SDL_Event *event = (SDL_Event *)luaL_checkudata(L, 1, "SDL_Event");
+  if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) {
+      lua_pushinteger(L, event->key.key);
+      return 1;
+  }
+  lua_pushnil(L);
+  lua_pushstring(L, "Event is not a key event");
+  return 2;
+}
+
+static int l_SDL_GetTicks(lua_State *L) {
+  Uint64 ticks = SDL_GetTicks();
+  lua_pushinteger(L, ticks);
+  return 1;
+}
+
 static const luaL_Reg sdl3_funcs[] = {
+    {"SDL_GetTicks", l_SDL_GetTicks},
     {"SDL_Init", l_sdl3_SDL_Init},
     {"SDL_CreateWindow", l_sdl3_SDL_CreateWindow},
     {"SDL_Delay", l_sdl3_SDL_Delay},
     {"SDL_Quit", l_sdl3_SDL_Quit},
     {"SDL_PollEvent", l_sdl3_SDL_PollEvent},
+    {"SDL_GetEventType", l_sdl3_SDL_GetEventType},
+    {"SDL_GetKeyFromEvent", l_sdl3_SDL_GetKeyFromEvent},
     {NULL, NULL}
 };
 
@@ -91,13 +125,13 @@ int luaopen_sdl3(lua_State *L) {
 
     luaL_newlib(L, sdl3_funcs);
 
-    lua_pushinteger(L, SDL_INIT_VIDEO);
-    lua_setfield(L, -2, "INIT_VIDEO");
-    // lua_pushinteger(L, SDL_EVENT_QUIT);
-    // lua_setfield(L, -2, "EVENT_QUIT");
-    lua_pushinteger(L, SDL_WINDOW_VULKAN);
-    lua_setfield(L, -2, "WINDOW_VULKAN");
-    lua_pushinteger(L, SDL_EVENT_QUIT);  // Add SDL_EVENT_QUIT (256)
-    lua_setfield(L, -2, "SDL_EVENT_QUIT");
+    lua_pushinteger(L, SDL_INIT_VIDEO); lua_setfield(L, -2, "SDL_INIT_VIDEO");
+    lua_pushinteger(L, SDL_WINDOW_VULKAN); lua_setfield(L, -2, "SDL_WINDOW_VULKAN");
+    lua_pushinteger(L, SDL_EVENT_QUIT); lua_setfield(L, -2, "SDL_EVENT_QUIT");
+    lua_pushinteger(L, SDL_EVENT_KEY_DOWN); lua_setfield(L, -2, "SDL_EVENT_KEY_DOWN");
+    lua_pushinteger(L, SDLK_LEFT); lua_setfield(L, -2, "SDLK_LEFT");
+    lua_pushinteger(L, SDLK_RIGHT); lua_setfield(L, -2, "SDLK_RIGHT");
+    lua_pushinteger(L, SDLK_UP); lua_setfield(L, -2, "SDLK_UP");
+    lua_pushinteger(L, SDLK_DOWN); lua_setfield(L, -2, "SDLK_DOWN");
     return 1;
 }
