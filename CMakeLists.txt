@@ -85,3 +85,29 @@ set_target_properties(hello_world PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON
 )
+
+# Shader compilation
+set(GLSLANG_VALIDATOR "C:/VulkanSDK/1.4.304.1/Bin/glslangValidator.exe")
+set(SHADER_SRC_DIR ${CMAKE_SOURCE_DIR}/shaders)
+set(SHADER_BIN_DIR ${CMAKE_BINARY_DIR})
+
+add_custom_command(
+    OUTPUT ${SHADER_BIN_DIR}/triangle.vert.spv
+    COMMAND ${GLSLANG_VALIDATOR} -V ${SHADER_SRC_DIR}/triangle.vert -o ${SHADER_BIN_DIR}/triangle.vert.spv
+    DEPENDS ${SHADER_SRC_DIR}/triangle.vert
+    COMMENT "Compiling triangle.vert to SPIR-V"
+)
+
+add_custom_command(
+    OUTPUT ${SHADER_BIN_DIR}/triangle.frag.spv
+    COMMAND ${GLSLANG_VALIDATOR} -V ${SHADER_SRC_DIR}/triangle.frag -o ${SHADER_BIN_DIR}/triangle.frag.spv
+    DEPENDS ${SHADER_SRC_DIR}/triangle.frag
+    COMMENT "Compiling triangle.frag to SPIR-V"
+)
+
+add_custom_target(
+    Shaders ALL
+    DEPENDS ${SHADER_BIN_DIR}/triangle.vert.spv ${SHADER_BIN_DIR}/triangle.frag.spv
+)
+
+add_dependencies(hello_world Shaders)

@@ -1,41 +1,233 @@
 # SDL3 Vulkan LuaJIT
 
-# Required:
- * VS2022 (It need NMake so need to install c/c++ that has it.)
- * CMake
- * vulkan-sdk-1.4.304.1 (current build)
-
-# Libs:
-  * SDL3
-  * Vulkan-Headers
-  * LuaJIT2
+# License: MIT
 
 # Information:
- Prototyping build for wrapper SDL3, Vulkan for Lua script.
+A lightweight prototype integrating SDL3, Vulkan, and LuaJIT to create a simple graphics application scripted in Lua. This project draws a colorful triangle on screen as a proof-of-concept, inspired by the simplicity of Raylib's Lua bindings, but built from scratch with Vulkan for rendering and SDL3 for windowing.
 
- This was inspired by RayLib Lua build after testing some features and build a prototype.
+## Notes:
+ * Needs work on readme doc.
+ * Most be rework from Grok Beta 3. It was not detail but quick mark up.
 
- 
-```
+---
+
+# Project Structure
+
+```text
 sdl3_vulkan_luajit/
-├── CMakeLists.txt
-├── build/  (generated)
-├── include/
-│   └── sdl3_luajit.h
-├── src/
-│   ├── main.c
-│   └── sdl3_luajit.c
-└── main.lua
+├── CMakeLists.txt           # CMake configuration file
+├── build/                   # Generated build directory (not in repo)
+│   ├── hello_world.exe      # Compiled executable
+│   ├── main.lua             # Copied Lua script
+│   ├── triangle.vert.spv    # Compiled vertex shader
+│   └── triangle.frag.spv    # Compiled fragment shader
+├── shaders/                 # Source shader files
+│   ├── triangle.frag        # Fragment shader (GLSL)
+│   └── triangle.vert        # Vertex shader (GLSL)
+├── include/                 # Header files
+│   ├── sdl3_luajit.h        # SDL3 LuaJIT wrapper header
+│   └── vulkan_luajit.h      # Vulkan LuaJIT wrapper header
+├── src/                     # Source files
+│   ├── main.c               # Entry point (loads LuaJIT)
+│   ├── sdl3_luajit.c        # SDL3 LuaJIT wrapper
+│   ├── vulkan_luajit.c      # Vulkan LuaJIT wrapper
+│   └── test.c               # Optional: Double-checks loading
+└── main.lua                 # Main Lua script
 ```
 
-# Build guide:
- Required VS2022 with c/c++ to build this application for lua script.
+---
 
- Reason is simple NMake use VS2022. As why not VS2022 just testing. As it does not use IDE but pure make file build.
+# Features
 
- Next part is make sure have VS2022 developer power shell to run as NMake need to build. One reason is LuaJIT need to be build in NMake with VS2022 dev power shell mode.
+- SDL3: Handles window creation and event management.
+- Vulkan: Renders a hard-coded RGB triangle using SPIR-V shaders.
+- LuaJIT: Scripts the application logic, interfacing with SDL3 and Vulkan via custom C wrappers.
+- CMake: Automates building and shader compilation.
+    
 
-# Refs:
- * https://github.com/stetre/moonvulkan
- * https://github.com/pixeljetstream/luajit_gfx_sandbox
+The current demo creates a window and renders a triangle with red, green, and blue vertices on a black background.
 
+---
+
+# Requirements
+
+## Software
+
+- Visual Studio 2022: Must include the Desktop development with C++ workload (provides NMake).
+- CMake: Version 3.10 or higher.
+- Vulkan SDK: Version 1.4.304.1 (download from [LunarG](https://vulkan.lunarg.com/sdk/home)).
+    
+## Libraries
+
+- SDL3: Windowing and input (built from source or prebuilt).
+- Vulkan-Headers: Vulkan API headers (included with Vulkan SDK).
+- LuaJIT 2: Fast Lua interpreter (built from source).
+    
+
+---
+
+# Build Guide
+
+This project uses CMake and NMake (from VS2022) for building. Follow these steps to set up and run the demo.
+
+## Prerequisites
+
+1. Install Visual Studio 2022:
+    
+    - Select the Desktop development with C++ workload during installation to include NMake.
+    - Open the Developer PowerShell for VS 2022 for commands (accessible via Start menu or vcvarsall.bat).
+        
+2. Install CMake:
+    
+    - Download from [cmake.org](https://cmake.org/download/) and add to your PATH.
+        
+3. Install Vulkan SDK 1.4.304.1:
+    
+    - Download from [LunarG](https://vulkan.lunarg.com/sdk/home) and install to C:\VulkanSDK\1.4.304.1 (default path assumed).
+        
+4. Build LuaJIT:
+    
+    - Clone [LuaJIT](https://github.com/LuaJIT/LuaJIT) (git clone https://github.com/LuaJIT/LuaJIT.git).
+        
+    - In the LuaJIT directory, open Developer PowerShell for VS 2022:
+        
+        cmd
+        ```text
+        cd src
+        msvcbuild.bat
+        ```
+        
+    - Copy luajit.exe and lua51.dll to a directory in your PATH or note their location.
+        
+5. Build SDL3:
+    
+    - Clone [SDL3](https://github.com/libsdl-org/SDL) (git clone https://github.com/libsdl-org/SDL.git).
+    - Follow SDL3’s build instructions for Windows with CMake, then note the install path.
+        
+
+## Build Steps
+
+1. Clone the Repository:
+    
+    cmd
+    ```text
+    git clone https://github.com/yourusername/sdl3_vulkan_luajit.git
+    cd sdl3_vulkan_luajit
+    ```
+# Notes:
+ * Use build.bat if on windows other is refs.
+ * Not work on other OS.
+
+
+2. Configure CMake:
+    
+    - Open Developer PowerShell for VS 2022.
+    - Create and enter the build directory:
+        
+        cmd
+        ```text
+        mkdir build
+        cd build
+        ```
+        
+    - Run CMake, specifying paths to SDL3, LuaJIT, and Vulkan if not in default locations:
+        
+        cmd
+        ```text
+        cmake .. -DSDL3_DIR="path/to/SDL3" -DLUAJIT_DIR="path/to/LuaJIT" -DVulkan_DIR="C:\VulkanSDK\1.4.304.1"
+        ```
+        
+        Replace paths as needed.
+        
+3. Build the Project:
+    
+    cmd
+    ```text
+    cmake --build . --config Release
+    ```
+    
+    - This compiles the shaders (triangle.vert and triangle.frag) to SPIR-V and builds hello_world.exe.
+        
+4. Run the Demo:
+    
+    cmd
+    ```text
+    hello_world.exe
+    ```
+    
+    - You should see a window with a colored triangle!
+        
+
+---
+
+Expected Output
+
+```text
+Vulkan instance extensions:
+  1: VK_KHR_surface
+  2: VK_KHR_win32_surface
+Found 1 physical devices
+Queue families for device 1:
+  1: flags=15, count=16
+  2: flags=12, count=2
+  3: flags=14, count=8
+  4: flags=44, count=1
+  5: flags=76, count=1
+Selected graphics queue family: index=0
+Logical device created
+Swapchain created with extent: 800x600
+Graphics queue retrieved
+Swapchain images retrieved: 2
+Render pass created
+Framebuffers created: 2
+Vertex shader created
+Fragment shader created
+Graphics pipeline created
+Command pool created
+Command buffers allocated: 2
+Command buffers recorded
+Image available semaphore created
+Render finished semaphore created
+No arguments provided
+Hello from main.lua! Vulkan API: 4210688
+```
+
+A window opens showing a triangle with red, green, and blue vertices on a black background. Close the window to exit.
+
+---
+
+## How It Works
+
+- main.c: Initializes LuaJIT and loads main.lua.
+- sdl3_luajit.c: Wraps SDL3 functions for Lua (windowing, events).
+- vulkan_luajit.c: Wraps Vulkan functions for Lua (instance, device, swapchain, pipeline, rendering).
+- main.lua: Orchestrates setup and rendering, drawing a triangle using Vulkan.
+- shaders/: GLSL vertex and fragment shaders compiled to SPIR-V with glslangValidator.
+    
+The triangle’s vertex data is hard-coded in triangle.vert, with colors passed to triangle.frag.
+
+---
+
+## Troubleshooting
+
+- No Triangle: Ensure triangle.vert.spv and triangle.frag.spv are in build/. Rebuild if missing.
+- CMake Errors: Verify paths to SDL3, LuaJIT, and Vulkan SDK in the cmake command.
+- Crash: Check for Vulkan validation layer errors (enable with Vulkan SDK’s VK_LAYER_KHRONOS_validation).
+    
+
+---
+
+## Inspiration & References
+
+- [MoonVulkan](https://github.com/stetre/moonvulkan): Lua bindings for Vulkan.
+- [LuaJIT GFX Sandbox](https://github.com/pixeljetstream/luajit_gfx_sandbox): Graphics experiments with LuaJIT.
+- Built after exploring Raylib’s Lua bindings, aiming for a Vulkan-based alternative.
+
+---
+
+## Future Plans
+
+- Optimize rendering with fences instead of vkQueueWaitIdle.
+- Add vertex buffers for dynamic geometry.
+- Support window resizing with swapchain recreation.
+    

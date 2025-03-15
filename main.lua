@@ -51,7 +51,7 @@ if not devices then
 end
 print("Found " .. #devices .. " physical devices")
 
-local queueFamilies, err = vulkan.VK_GetPhysicalDeviceQueueFamilyProperties(devices[1])  -- Fixed typo
+local queueFamilies, err = vulkan.VK_GetPhysicalDeviceQueueFamilyProperties(devices[1])
 if not queueFamilies then
     print("Failed to get queue families: " .. (err or "No error message"))
     vulkan.VK_DestroySurfaceKHR(surface)
@@ -90,7 +90,7 @@ if not device then
 end
 print("Logical device created")
 
-local swapchain, err = vulkan.VK_CreateSwapchainKHR(device, surface, window, devices[1])
+local swapchain, extent, err = vulkan.VK_CreateSwapchainKHR(device, surface, window, devices[1])
 if not swapchain then
     print("Swapchain creation failed: " .. (err or "No error message"))
     vulkan.VK_DestroyDevice(device)
@@ -99,7 +99,7 @@ if not swapchain then
     sdl3.SDL_Quit()
     return
 end
-print("Swapchain created")
+print("Swapchain created with extent: " .. extent.width .. "x" .. extent.height)
 
 local graphicsQueue, err = vulkan.VK_GetDeviceQueue(device, graphicsQueueFamily.queueFamilyIndex, 0)
 if not graphicsQueue then
@@ -137,6 +137,203 @@ if not renderPass then
 end
 print("Render pass created")
 
+local framebuffers = {}
+for i, image in ipairs(swapchainImages) do
+    local framebuffer, err = vulkan.VK_CreateFramebuffer(device, renderPass, image, extent)
+    if not framebuffer then
+        print("Framebuffer " .. i .. " creation failed: " .. (err or "No error message"))
+        for _, fb in ipairs(framebuffers) do
+            vulkan.VK_DestroyFramebuffer(fb)
+        end
+        vulkan.VK_DestroyRenderPass(renderPass)
+        vulkan.VK_DestroySwapchainKHR(swapchain)
+        vulkan.VK_DestroyDevice(device)
+        vulkan.VK_DestroySurfaceKHR(surface)
+        vulkan.VK_DestroyInstance(instance)
+        sdl3.SDL_Quit()
+        return
+    end
+    table.insert(framebuffers, framebuffer)
+end
+print("Framebuffers created: " .. #framebuffers)
+
+local vertShader, err = vulkan.VK_CreateShaderModule(device, "triangle.vert.spv")
+if not vertShader then
+    print("Vertex shader creation failed: " .. (err or "No error message"))
+    for _, fb in ipairs(framebuffers) do
+        vulkan.VK_DestroyFramebuffer(fb)
+    end
+    vulkan.VK_DestroyRenderPass(renderPass)
+    vulkan.VK_DestroySwapchainKHR(swapchain)
+    vulkan.VK_DestroyDevice(device)
+    vulkan.VK_DestroySurfaceKHR(surface)
+    vulkan.VK_DestroyInstance(instance)
+    sdl3.SDL_Quit()
+    return
+end
+print("Vertex shader created")
+
+local fragShader, err = vulkan.VK_CreateShaderModule(device, "triangle.frag.spv")
+if not fragShader then
+    print("Fragment shader creation failed: " .. (err or "No error message"))
+    vulkan.VK_DestroyShaderModule(vertShader)
+    for _, fb in ipairs(framebuffers) do
+        vulkan.VK_DestroyFramebuffer(fb)
+    end
+    vulkan.VK_DestroyRenderPass(renderPass)
+    vulkan.VK_DestroySwapchainKHR(swapchain)
+    vulkan.VK_DestroyDevice(device)
+    vulkan.VK_DestroySurfaceKHR(surface)
+    vulkan.VK_DestroyInstance(instance)
+    sdl3.SDL_Quit()
+    return
+end
+print("Fragment shader created")
+
+local pipeline, err = vulkan.VK_CreateGraphicsPipelines(device, vertShader, fragShader, renderPass, extent)
+if not pipeline then
+    print("Pipeline creation failed: " .. (err or "No error message"))
+    vulkan.VK_DestroyShaderModule(fragShader)
+    vulkan.VK_DestroyShaderModule(vertShader)
+    for _, fb in ipairs(framebuffers) do
+        vulkan.VK_DestroyFramebuffer(fb)
+    end
+    vulkan.VK_DestroyRenderPass(renderPass)
+    vulkan.VK_DestroySwapchainKHR(swapchain)
+    vulkan.VK_DestroyDevice(device)
+    vulkan.VK_DestroySurfaceKHR(surface)
+    vulkan.VK_DestroyInstance(instance)
+    sdl3.SDL_Quit()
+    return
+end
+print("Graphics pipeline created")
+
+local commandPool, err = vulkan.VK_CreateCommandPool(device, graphicsQueueFamily.queueFamilyIndex)
+if not commandPool then
+    print("Command pool creation failed: " .. (err or "No error message"))
+    vulkan.VK_DestroyPipeline(pipeline)
+    vulkan.VK_DestroyShaderModule(fragShader)
+    vulkan.VK_DestroyShaderModule(vertShader)
+    for _, fb in ipairs(framebuffers) do
+        vulkan.VK_DestroyFramebuffer(fb)
+    end
+    vulkan.VK_DestroyRenderPass(renderPass)
+    vulkan.VK_DestroySwapchainKHR(swapchain)
+    vulkan.VK_DestroyDevice(device)
+    vulkan.VK_DestroySurfaceKHR(surface)
+    vulkan.VK_DestroyInstance(instance)
+    sdl3.SDL_Quit()
+    return
+end
+print("Command pool created")
+
+local commandBuffers, err = vulkan.VK_AllocateCommandBuffers(device, commandPool, #framebuffers)
+if not commandBuffers then
+    print("Command buffer allocation failed: " .. (err or "No error message"))
+    vulkan.VK_DestroyCommandPool(commandPool)
+    vulkan.VK_DestroyPipeline(pipeline)
+    vulkan.VK_DestroyShaderModule(fragShader)
+    vulkan.VK_DestroyShaderModule(vertShader)
+    for _, fb in ipairs(framebuffers) do
+        vulkan.VK_DestroyFramebuffer(fb)
+    end
+    vulkan.VK_DestroyRenderPass(renderPass)
+    vulkan.VK_DestroySwapchainKHR(swapchain)
+    vulkan.VK_DestroyDevice(device)
+    vulkan.VK_DestroySurfaceKHR(surface)
+    vulkan.VK_DestroyInstance(instance)
+    sdl3.SDL_Quit()
+    return
+end
+print("Command buffers allocated: " .. #commandBuffers)
+
+for i, cmd in ipairs(commandBuffers) do
+    local success, err = vulkan.VK_BeginCommandBuffer(cmd)
+    if not success then
+        print("Failed to begin command buffer " .. i .. ": " .. (err or "No error message"))
+        vulkan.VK_DestroyCommandPool(commandPool)
+        vulkan.VK_DestroyPipeline(pipeline)
+        vulkan.VK_DestroyShaderModule(fragShader)
+        vulkan.VK_DestroyShaderModule(vertShader)
+        for _, fb in ipairs(framebuffers) do
+            vulkan.VK_DestroyFramebuffer(fb)
+        end
+        vulkan.VK_DestroyRenderPass(renderPass)
+        vulkan.VK_DestroySwapchainKHR(swapchain)
+        vulkan.VK_DestroyDevice(device)
+        vulkan.VK_DestroySurfaceKHR(surface)
+        vulkan.VK_DestroyInstance(instance)
+        sdl3.SDL_Quit()
+        return
+    end
+
+    vulkan.VK_CmdBeginRenderPass(cmd, renderPass, framebuffers[i], extent)
+    vulkan.VK_CmdBindPipeline(cmd, pipeline)
+    vulkan.VK_CmdDraw(cmd, 3, 1, 0, 0)  -- 3 vertices, 1 instance
+    vulkan.VK_CmdEndRenderPass(cmd)
+
+    success, err = vulkan.VK_EndCommandBuffer(cmd)
+    if not success then
+        print("Failed to end command buffer " .. i .. ": " .. (err or "No error message"))
+        vulkan.VK_DestroyCommandPool(commandPool)
+        vulkan.VK_DestroyPipeline(pipeline)
+        vulkan.VK_DestroyShaderModule(fragShader)
+        vulkan.VK_DestroyShaderModule(vertShader)
+        for _, fb in ipairs(framebuffers) do
+            vulkan.VK_DestroyFramebuffer(fb)
+        end
+        vulkan.VK_DestroyRenderPass(renderPass)
+        vulkan.VK_DestroySwapchainKHR(swapchain)
+        vulkan.VK_DestroyDevice(device)
+        vulkan.VK_DestroySurfaceKHR(surface)
+        vulkan.VK_DestroyInstance(instance)
+        sdl3.SDL_Quit()
+        return
+    end
+end
+print("Command buffers recorded")
+
+local imageAvailableSemaphore, err = vulkan.VK_CreateSemaphore(device)
+if not imageAvailableSemaphore then
+    print("Image available semaphore creation failed: " .. (err or "No error message"))
+    vulkan.VK_DestroyCommandPool(commandPool)
+    vulkan.VK_DestroyPipeline(pipeline)
+    vulkan.VK_DestroyShaderModule(fragShader)
+    vulkan.VK_DestroyShaderModule(vertShader)
+    for _, fb in ipairs(framebuffers) do
+        vulkan.VK_DestroyFramebuffer(fb)
+    end
+    vulkan.VK_DestroyRenderPass(renderPass)
+    vulkan.VK_DestroySwapchainKHR(swapchain)
+    vulkan.VK_DestroyDevice(device)
+    vulkan.VK_DestroySurfaceKHR(surface)
+    vulkan.VK_DestroyInstance(instance)
+    sdl3.SDL_Quit()
+    return
+end
+print("Image available semaphore created")
+
+local renderFinishedSemaphore, err = vulkan.VK_CreateSemaphore(device)
+if not renderFinishedSemaphore then
+    print("Render finished semaphore creation failed: " .. (err or "No error message"))
+    vulkan.VK_DestroySemaphore(imageAvailableSemaphore)
+    vulkan.VK_DestroyCommandPool(commandPool)
+    vulkan.VK_DestroyPipeline(pipeline)
+    vulkan.VK_DestroyShaderModule(fragShader)
+    vulkan.VK_DestroyShaderModule(vertShader)
+    for _, fb in ipairs(framebuffers) do
+        vulkan.VK_DestroyFramebuffer(fb)
+    end
+    vulkan.VK_DestroyRenderPass(renderPass)
+    vulkan.VK_DestroySwapchainKHR(swapchain)
+    vulkan.VK_DestroyDevice(device)
+    vulkan.VK_DestroySurfaceKHR(surface)
+    vulkan.VK_DestroyInstance(instance)
+    sdl3.SDL_Quit()
+    return
+end
+print("Render finished semaphore created")
+
 if arg and #arg > 0 then
     print("Arguments:")
     for i, v in ipairs(arg) do
@@ -157,9 +354,38 @@ while not done do
         end
         event_type = sdl3.SDL_PollEvent()
     end
+
+    local imageIndex, err = vulkan.VK_AcquireNextImageKHR(device, swapchain, imageAvailableSemaphore)
+    if not imageIndex then
+        print("Failed to acquire next image: " .. (err or "No error message"))
+        break
+    end
+
+    local success, err = vulkan.VK_QueueSubmit(graphicsQueue, commandBuffers[imageIndex], imageAvailableSemaphore, renderFinishedSemaphore)
+    if not success then
+        print("Queue submit failed: " .. (err or "No error message"))
+        break
+    end
+
+    success, err = vulkan.VK_QueuePresentKHR(graphicsQueue, swapchain, imageIndex, renderFinishedSemaphore)
+    if not success then
+        print("Queue present failed: " .. (err or "No error message"))
+        break
+    end
+
+    vulkan.VK_QueueWaitIdle(graphicsQueue)
     sdl3.SDL_Delay(16)
 end
 
+vulkan.VK_DestroySemaphore(renderFinishedSemaphore)
+vulkan.VK_DestroySemaphore(imageAvailableSemaphore)
+vulkan.VK_DestroyCommandPool(commandPool)
+vulkan.VK_DestroyPipeline(pipeline)
+vulkan.VK_DestroyShaderModule(fragShader)
+vulkan.VK_DestroyShaderModule(vertShader)
+for _, framebuffer in ipairs(framebuffers) do
+    vulkan.VK_DestroyFramebuffer(framebuffer)
+end
 vulkan.VK_DestroyRenderPass(renderPass)
 vulkan.VK_DestroySwapchainKHR(swapchain)
 vulkan.VK_DestroyDevice(device)
