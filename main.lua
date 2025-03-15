@@ -348,73 +348,36 @@ end
 print("Command buffers recorded")
 
 
-print("Creating image available semaphore...")
-local imageAvailableSemaphore, err = vulkan.VK_CreateSemaphore(device)
-if not imageAvailableSemaphore then
-    print("Image available semaphore creation failed: " .. (err or "No error message"))
-    vulkan.VK_DestroyCommandPool(commandPool)
-    vulkan.VK_DestroyPipeline(pipeline)
-    vulkan.VK_DestroyShaderModule(fragShader)
-    vulkan.VK_DestroyShaderModule(vertShader)
-    for _, fb in ipairs(framebuffers) do
-        vulkan.VK_DestroyFramebuffer(fb)
+-- Create two image available semaphores
+print("Creating image available semaphores...")
+local imageAvailableSemaphores = {}
+for i = 1, 2 do
+    local semaphore, err = vulkan.VK_CreateSemaphore(device)
+    if not semaphore then
+        print("Failed to create image available semaphore " .. i .. ": " .. (err or "No error message"))
+        -- Cleanup and exit (add your cleanup here if needed)
+        return
     end
-    vulkan.VK_DestroyRenderPass(renderPass)
-    vulkan.VK_DestroySwapchainKHR(swapchain)
-    vulkan.VK_DestroyDevice(device)
-    vulkan.VK_DestroySurfaceKHR(surface)
-    vulkan.VK_DestroyInstance(instance)
-    sdl3.SDL_Quit()
-    return
+    table.insert(imageAvailableSemaphores, semaphore)
+    print("Image available semaphore " .. i .. " created")
 end
-print("Image available semaphore created")
 
 print("Creating render finished semaphore...")
 local renderFinishedSemaphore, err = vulkan.VK_CreateSemaphore(device)
 if not renderFinishedSemaphore then
-    print("Render finished semaphore creation failed: " .. (err or "No error message"))
-    vulkan.VK_DestroySemaphore(imageAvailableSemaphore)
-    vulkan.VK_DestroyCommandPool(commandPool)
-    vulkan.VK_DestroyPipeline(pipeline)
-    vulkan.VK_DestroyShaderModule(fragShader)
-    vulkan.VK_DestroyShaderModule(vertShader)
-    for _, fb in ipairs(framebuffers) do
-        vulkan.VK_DestroyFramebuffer(fb)
-    end
-    vulkan.VK_DestroyRenderPass(renderPass)
-    vulkan.VK_DestroySwapchainKHR(swapchain)
-    vulkan.VK_DestroyDevice(device)
-    vulkan.VK_DestroySurfaceKHR(surface)
-    vulkan.VK_DestroyInstance(instance)
-    sdl3.SDL_Quit()
+    print("Failed to create render finished semaphore: " .. (err or "No error message"))
     return
 end
 print("Render finished semaphore created")
 
+
+
 print("Creating fences...")
 local fences = {}
-for i = 1, #framebuffers do
+for i = 1, 2 do
     local fence, err = vulkan.VK_CreateFence(device)
     if not fence then
-        print("Fence " .. i .. " creation failed: " .. (err or "No error message"))
-        for _, f in ipairs(fences) do
-            vulkan.VK_DestroyFence(f)
-        end
-        vulkan.VK_DestroySemaphore(renderFinishedSemaphore)
-        vulkan.VK_DestroySemaphore(imageAvailableSemaphore)
-        vulkan.VK_DestroyCommandPool(commandPool)
-        vulkan.VK_DestroyPipeline(pipeline)
-        vulkan.VK_DestroyShaderModule(fragShader)
-        vulkan.VK_DestroyShaderModule(vertShader)
-        for _, fb in ipairs(framebuffers) do
-            vulkan.VK_DestroyFramebuffer(fb)
-        end
-        vulkan.VK_DestroyRenderPass(renderPass)
-        vulkan.VK_DestroySwapchainKHR(swapchain)
-        vulkan.VK_DestroyDevice(device)
-        vulkan.VK_DestroySurfaceKHR(surface)
-        vulkan.VK_DestroyInstance(instance)
-        sdl3.SDL_Quit()
+        print("Failed to create fence " .. i .. ": " .. (err or "No error message"))
         return
     end
     table.insert(fences, fence)
@@ -435,13 +398,11 @@ print("Hello from main.lua! Vulkan API: " .. vulkan.API_VERSION_1_4)
 
 print("Entering render loop...")
 local done = false
+local currentFrame = 1  -- Track which semaphore/fence pair to use (1 or 2)
 while not done do
     local event_type = sdl3.SDL_PollEvent()
     while event_type do
-        print("Event type received: " .. tostring(event_type))  -- Debug: log all events
-        -- Try SDL_EVENT_QUIT first, then fall back to EVENT_QUIT or a numeric value
-        -- if event_type == sdl3.SDL_EVENT_QUIT or event_type == 256 then  -- 256 is SDL_EVENT_QUIT in SDL3
-        if event_type == sdl3.SDL_EVENT_QUIT then  -- 256 is SDL_EVENT_QUIT in SDL3
+        if event_type == sdl3.SDL_EVENT_QUIT then
             done = true
             print("Quit event received")
             break
@@ -450,9 +411,17 @@ while not done do
     end
 
     if not done then
-        -- ... (rest of the render loop remains unchanged) ...
-        print("Acquiring next image...")
-        local imageIndex, err = vulkan.VK_AcquireNextImageKHR(device, swapchain, imageAvailableSemaphore)
+        -- Wait for the previous frame to finish
+        print("Waiting for fence " .. currentFrame .. "...")
+        local success, err = vulkan.VK_WaitForFences(device, fences[currentFrame], 1000000000)
+        if not success then
+            print("Failed to wait for fence " .. currentFrame .. ": " .. (err or "No error message"))
+            done = true
+            break
+        end
+
+        print("Acquiring next image with semaphore " .. currentFrame .. "...")
+        local imageIndex, err = vulkan.VK_AcquireNextImageKHR(device, swapchain, imageAvailableSemaphores[currentFrame])
         if not imageIndex then
             print("Failed to acquire next image: " .. (err or "No error message"))
             done = true
@@ -460,24 +429,16 @@ while not done do
         end
         print("Image acquired: " .. imageIndex)
 
-        print("Waiting for fence " .. imageIndex .. "...")
-        local success, err = vulkan.VK_WaitForFences(device, fences[imageIndex], 1000000000)
+        print("Resetting fence " .. currentFrame .. "...")
+        success, err = vulkan.VK_ResetFences(device, fences[currentFrame])
         if not success then
-            print("Failed to wait for fence " .. imageIndex .. ": " .. (err or "No error message"))
-            done = true
-            break
-        end
-
-        print("Resetting fence " .. imageIndex .. "...")
-        success, err = vulkan.VK_ResetFences(device, fences[imageIndex])
-        if not success then
-            print("Failed to reset fence " .. imageIndex .. ": " .. (err or "No error message"))
+            print("Failed to reset fence " .. currentFrame .. ": " .. (err or "No error message"))
             done = true
             break
         end
 
         print("Submitting queue for image " .. imageIndex .. "...")
-        success, err = vulkan.VK_QueueSubmit(graphicsQueue, commandBuffers[imageIndex], imageAvailableSemaphore, renderFinishedSemaphore, fences[imageIndex])
+        success, err = vulkan.VK_QueueSubmit(graphicsQueue, commandBuffers[imageIndex], imageAvailableSemaphores[currentFrame], renderFinishedSemaphore, fences[currentFrame])
         if not success then
             print("Queue submit failed: " .. (err or "No error message"))
             done = true
@@ -492,6 +453,8 @@ while not done do
             break
         end
 
+        -- Toggle to the next frame (1 or 2)
+        currentFrame = currentFrame % 2 + 1
         sdl3.SDL_Delay(16)  -- ~60 FPS
     end
 end
@@ -509,8 +472,10 @@ print("Cleaning up...")
 for i, fence in ipairs(fences) do
     vulkan.VK_DestroyFence(fence)
 end
+for i, semaphore in ipairs(imageAvailableSemaphores) do
+    vulkan.VK_DestroySemaphore(semaphore)
+end
 vulkan.VK_DestroySemaphore(renderFinishedSemaphore)
-vulkan.VK_DestroySemaphore(imageAvailableSemaphore)
 vulkan.VK_DestroyCommandPool(commandPool)
 vulkan.VK_DestroyPipeline(pipeline)
 vulkan.VK_DestroyShaderModule(fragShader)

@@ -43,6 +43,7 @@ typedef struct {
 
 typedef struct {
     VkPipeline pipeline;
+    VkPipelineLayout pipelineLayout; 
     VkDevice device;
 } VulkanPipeline;
 
@@ -88,13 +89,25 @@ static int l_vulkan_VK_CreateInstanceHelper(lua_State *L) {
         .apiVersion = VK_API_VERSION_1_4
     };
 
+    
+    // VkInstanceCreateInfo createInfo = {
+    //     .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+    //     .pApplicationInfo = &appInfo,
+    //     .enabledExtensionCount = extensionCount,
+    //     .ppEnabledExtensionNames = extensionNames,
+    //     .enabledLayerCount = 0,
+    //     .ppEnabledLayerNames = NULL
+    // };
+
+    const char* validationLayerName = "VK_LAYER_KHRONOS_validation";
+
     VkInstanceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &appInfo,
         .enabledExtensionCount = extensionCount,
         .ppEnabledExtensionNames = extensionNames,
-        .enabledLayerCount = 0,
-        .ppEnabledLayerNames = NULL
+        .enabledLayerCount = 1,
+        .ppEnabledLayerNames = &validationLayerName
     };
 
     VkInstance instance;
@@ -581,6 +594,38 @@ static int l_vulkan_VK_DestroyShaderModule(lua_State *L) {
     return 0;
 }
 
+
+static int l_vulkan_VK_CreatePipelineLayout(lua_State *L) {
+  VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+
+  VkPipelineLayoutCreateInfo layoutInfo = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+      .setLayoutCount = 0,          // No descriptor sets
+      .pSetLayouts = NULL,
+      .pushConstantRangeCount = 0,  // No push constants
+      .pPushConstantRanges = NULL
+  };
+
+  VkPipelineLayout pipelineLayout;
+  VkResult result = vkCreatePipelineLayout(device_ptr->device, &layoutInfo, NULL, &pipelineLayout);
+  if (result != VK_SUCCESS) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to create pipeline layout");
+      return 2;
+  }
+
+  VulkanPipeline *pipeline_ptr = (VulkanPipeline *)lua_newuserdata(L, sizeof(VulkanPipeline));
+  pipeline_ptr->pipeline = VK_NULL_HANDLE;  // Pipeline not created yet
+  pipeline_ptr->pipelineLayout = pipelineLayout;
+  pipeline_ptr->device = device_ptr->device;
+  luaL_getmetatable(L, "VulkanPipeline");
+  lua_setmetatable(L, -2);
+  return 1;
+}
+
+
+
+
 static int l_vulkan_VK_CreateGraphicsPipelines(lua_State *L) {
   VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
   VulkanShaderModule *vertShader_ptr = (VulkanShaderModule *)luaL_checkudata(L, 2, "VulkanShaderModule");
@@ -594,6 +639,22 @@ static int l_vulkan_VK_CreateGraphicsPipelines(lua_State *L) {
   lua_getfield(L, 5, "height");
   uint32_t height = (uint32_t)luaL_checkinteger(L, -1);
   lua_pop(L, 1);
+
+  // Create a pipeline layout
+  VkPipelineLayoutCreateInfo layoutInfo = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+      .setLayoutCount = 0,
+      .pSetLayouts = NULL,
+      .pushConstantRangeCount = 0,
+      .pPushConstantRanges = NULL
+  };
+  VkPipelineLayout pipelineLayout;
+  VkResult result = vkCreatePipelineLayout(device_ptr->device, &layoutInfo, NULL, &pipelineLayout);
+  if (result != VK_SUCCESS) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to create pipeline layout");
+      return 2;
+  }
 
   VkPipelineShaderStageCreateInfo vertShaderStageInfo = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -663,32 +724,46 @@ static int l_vulkan_VK_CreateGraphicsPipelines(lua_State *L) {
       .pRasterizationState = &rasterizer,
       .pMultisampleState = &multisampling,
       .pColorBlendState = &colorBlending,
+      .layout = pipelineLayout,  // Set the pipeline layout
       .renderPass = renderPass_ptr->renderPass,
       .subpass = 0
   };
+
   VkPipeline pipeline;
-  VkResult result = vkCreateGraphicsPipelines(device_ptr->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &pipeline);
+  result = vkCreateGraphicsPipelines(device_ptr->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &pipeline);
   if (result != VK_SUCCESS) {
+      vkDestroyPipelineLayout(device_ptr->device, pipelineLayout, NULL);
       lua_pushnil(L);
       lua_pushstring(L, "Failed to create graphics pipeline");
       return 2;
   }
+
   VulkanPipeline *pipeline_ptr = (VulkanPipeline *)lua_newuserdata(L, sizeof(VulkanPipeline));
   pipeline_ptr->pipeline = pipeline;
+  pipeline_ptr->pipelineLayout = pipelineLayout;  // Store the layout
   pipeline_ptr->device = device_ptr->device;
   luaL_getmetatable(L, "VulkanPipeline");
   lua_setmetatable(L, -2);
   return 1;
 }
 
+
 static int l_vulkan_VK_DestroyPipeline(lua_State *L) {
-    VulkanPipeline *pipeline_ptr = (VulkanPipeline *)luaL_checkudata(L, 1, "VulkanPipeline");
-    if (pipeline_ptr->pipeline && pipeline_ptr->device) {
-        vkDestroyPipeline(pipeline_ptr->device, pipeline_ptr->pipeline, NULL);
-        pipeline_ptr->pipeline = VK_NULL_HANDLE;
-    }
-    return 0;
+  VulkanPipeline *pipeline_ptr = (VulkanPipeline *)luaL_checkudata(L, 1, "VulkanPipeline");
+  if (pipeline_ptr->pipeline && pipeline_ptr->device) {
+      vkDestroyPipeline(pipeline_ptr->device, pipeline_ptr->pipeline, NULL);
+      pipeline_ptr->pipeline = VK_NULL_HANDLE;
+  }
+  if (pipeline_ptr->pipelineLayout && pipeline_ptr->device) {
+      vkDestroyPipelineLayout(pipeline_ptr->device, pipeline_ptr->pipelineLayout, NULL);
+      pipeline_ptr->pipelineLayout = VK_NULL_HANDLE;
+  }
+  return 0;
 }
+
+
+
+
 
 static int l_vulkan_VK_CreateCommandPool(lua_State *L) {
     VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
@@ -1129,6 +1204,7 @@ static const luaL_Reg vulkan_funcs[] = {
     {"VK_DestroyFramebuffer", l_vulkan_VK_DestroyFramebuffer},
     {"VK_CreateShaderModule", l_vulkan_VK_CreateShaderModule},
     {"VK_DestroyShaderModule", l_vulkan_VK_DestroyShaderModule},
+    {"VK_CreatePipelineLayout", l_vulkan_VK_CreatePipelineLayout},
     {"VK_CreateGraphicsPipelines", l_vulkan_VK_CreateGraphicsPipelines},
     {"VK_DestroyPipeline", l_vulkan_VK_DestroyPipeline},
     {"VK_CreateCommandPool", l_vulkan_VK_CreateCommandPool},
