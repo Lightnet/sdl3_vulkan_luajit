@@ -31,8 +31,9 @@ typedef struct {
 } VulkanRenderPass;
 
 typedef struct {
-    VkFramebuffer framebuffer;
-    VkDevice device;
+  VkFramebuffer framebuffer;
+  VkImageView imageView;  // Add this to keep the image view alive
+  VkDevice device;
 } VulkanFramebuffer;
 
 typedef struct {
@@ -59,6 +60,11 @@ typedef struct {
     VkSemaphore semaphore;
     VkDevice device;
 } VulkanSemaphore;
+
+typedef struct {
+  VkFence fence;
+  VkDevice device;
+} VulkanFence;
 
 static int l_vulkan_VK_CreateInstanceHelper(lua_State *L) {
     SDL3Window *window_ptr = (SDL3Window *)luaL_checkudata(L, 1, "SDL3Window");
@@ -394,52 +400,46 @@ static int l_vulkan_VK_GetSwapchainImagesKHR(lua_State *L) {
 }
 
 static int l_vulkan_VK_CreateRenderPass(lua_State *L) {
-    VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
-
-    VkAttachmentDescription colorAttachment = {
-        .format = VK_FORMAT_B8G8R8A8_UNORM,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-    };
-
-    VkAttachmentReference colorAttachmentRef = {
-        .attachment = 0,
-        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-    };
-
-    VkSubpassDescription subpass = {
-        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &colorAttachmentRef
-    };
-
-    VkRenderPassCreateInfo createInfo = {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments = &colorAttachment,
-        .subpassCount = 1,
-        .pSubpasses = &subpass
-    };
-
-    VkRenderPass renderPass;
-    VkResult result = vkCreateRenderPass(device_ptr->device, &createInfo, NULL, &renderPass);
-    if (result != VK_SUCCESS) {
-        lua_pushnil(L);
-        lua_pushstring(L, "Failed to create render pass");
-        return 2;
-    }
-
-    VulkanRenderPass *renderPass_ptr = (VulkanRenderPass *)lua_newuserdata(L, sizeof(VulkanRenderPass));
-    renderPass_ptr->renderPass = renderPass;
-    renderPass_ptr->device = device_ptr->device;
-    luaL_getmetatable(L, "VulkanRenderPass");
-    lua_setmetatable(L, -2);
-    return 1;
+  VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VkAttachmentDescription colorAttachment = {
+      .format = VK_FORMAT_B8G8R8A8_UNORM,  // Match swapchain format
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+  };
+  VkAttachmentReference colorAttachmentRef = {
+      .attachment = 0,
+      .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+  };
+  VkSubpassDescription subpass = {
+      .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+      .colorAttachmentCount = 1,
+      .pColorAttachments = &colorAttachmentRef
+  };
+  VkRenderPassCreateInfo renderPassInfo = {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+      .attachmentCount = 1,
+      .pAttachments = &colorAttachment,
+      .subpassCount = 1,
+      .pSubpasses = &subpass
+  };
+  VkRenderPass renderPass;
+  VkResult result = vkCreateRenderPass(device_ptr->device, &renderPassInfo, NULL, &renderPass);
+  if (result != VK_SUCCESS) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to create render pass");
+      return 2;
+  }
+  VulkanRenderPass *renderPass_ptr = (VulkanRenderPass *)lua_newuserdata(L, sizeof(VulkanRenderPass));
+  renderPass_ptr->renderPass = renderPass;
+  renderPass_ptr->device = device_ptr->device;
+  luaL_getmetatable(L, "VulkanRenderPass");
+  lua_setmetatable(L, -2);
+  return 1;
 }
 
 static int l_vulkan_VK_DestroyRenderPass(lua_State *L) {
@@ -452,75 +452,82 @@ static int l_vulkan_VK_DestroyRenderPass(lua_State *L) {
 }
 
 static int l_vulkan_VK_CreateFramebuffer(lua_State *L) {
-    VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
-    VulkanRenderPass *renderPass_ptr = (VulkanRenderPass *)luaL_checkudata(L, 2, "VulkanRenderPass");
-    VkImage image = (VkImage)lua_touserdata(L, 3);
-    luaL_checktype(L, 4, LUA_TTABLE);
+  VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanRenderPass *renderPass_ptr = (VulkanRenderPass *)luaL_checkudata(L, 2, "VulkanRenderPass");
+  VkImage image = (VkImage)lua_touserdata(L, 3);
+  luaL_checktype(L, 4, LUA_TTABLE);
 
-    lua_getfield(L, 4, "width");
-    uint32_t width = (uint32_t)luaL_checkinteger(L, -1);
-    lua_pop(L, 1);
-    lua_getfield(L, 4, "height");
-    uint32_t height = (uint32_t)luaL_checkinteger(L, -1);
-    lua_pop(L, 1);
+  lua_getfield(L, 4, "width");
+  uint32_t width = (uint32_t)luaL_checkinteger(L, -1);
+  lua_pop(L, 1);
+  lua_getfield(L, 4, "height");
+  uint32_t height = (uint32_t)luaL_checkinteger(L, -1);
+  lua_pop(L, 1);
 
-    VkImageViewCreateInfo viewInfo = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = VK_FORMAT_B8G8R8A8_UNORM,
-        .components = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY},
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
+  VkImageViewCreateInfo viewInfo = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .image = image,
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .format = VK_FORMAT_B8G8R8A8_UNORM,
+      .components = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY},
+      .subresourceRange = {
+          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+          .baseMipLevel = 0,
+          .levelCount = 1,
+          .baseArrayLayer = 0,
+          .layerCount = 1
+      }
+  };
 
-    VkImageView imageView;
-    VkResult result = vkCreateImageView(device_ptr->device, &viewInfo, NULL, &imageView);
-    if (result != VK_SUCCESS) {
-        lua_pushnil(L);
-        lua_pushstring(L, "Failed to create image view");
-        return 2;
-    }
+  VkImageView imageView;
+  VkResult result = vkCreateImageView(device_ptr->device, &viewInfo, NULL, &imageView);
+  if (result != VK_SUCCESS) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to create image view");
+      return 2;
+  }
 
-    VkFramebufferCreateInfo createInfo = {
-        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-        .renderPass = renderPass_ptr->renderPass,
-        .attachmentCount = 1,
-        .pAttachments = &imageView,
-        .width = width,
-        .height = height,
-        .layers = 1
-    };
+  VkFramebufferCreateInfo createInfo = {
+      .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+      .renderPass = renderPass_ptr->renderPass,
+      .attachmentCount = 1,
+      .pAttachments = &imageView,
+      .width = width,
+      .height = height,
+      .layers = 1
+  };
 
-    VkFramebuffer framebuffer;
-    result = vkCreateFramebuffer(device_ptr->device, &createInfo, NULL, &framebuffer);
-    vkDestroyImageView(device_ptr->device, imageView, NULL);
-    if (result != VK_SUCCESS) {
-        lua_pushnil(L);
-        lua_pushstring(L, "Failed to create framebuffer");
-        return 2;
-    }
+  VkFramebuffer framebuffer;
+  result = vkCreateFramebuffer(device_ptr->device, &createInfo, NULL, &framebuffer);
+  if (result != VK_SUCCESS) {
+      vkDestroyImageView(device_ptr->device, imageView, NULL);
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to create framebuffer");
+      return 2;
+  }
 
-    VulkanFramebuffer *framebuffer_ptr = (VulkanFramebuffer *)lua_newuserdata(L, sizeof(VulkanFramebuffer));
-    framebuffer_ptr->framebuffer = framebuffer;
-    framebuffer_ptr->device = device_ptr->device;
-    luaL_getmetatable(L, "VulkanFramebuffer");
-    lua_setmetatable(L, -2);
-    return 1;
+  VulkanFramebuffer *framebuffer_ptr = (VulkanFramebuffer *)lua_newuserdata(L, sizeof(VulkanFramebuffer));
+  framebuffer_ptr->framebuffer = framebuffer;
+  framebuffer_ptr->imageView = imageView;  // Store the image view
+  framebuffer_ptr->device = device_ptr->device;
+  luaL_getmetatable(L, "VulkanFramebuffer");
+  lua_setmetatable(L, -2);
+  return 1;
 }
 
+
+
 static int l_vulkan_VK_DestroyFramebuffer(lua_State *L) {
-    VulkanFramebuffer *framebuffer_ptr = (VulkanFramebuffer *)luaL_checkudata(L, 1, "VulkanFramebuffer");
-    if (framebuffer_ptr->framebuffer && framebuffer_ptr->device) {
-        vkDestroyFramebuffer(framebuffer_ptr->device, framebuffer_ptr->framebuffer, NULL);
-        framebuffer_ptr->framebuffer = VK_NULL_HANDLE;
-    }
-    return 0;
+  VulkanFramebuffer *framebuffer_ptr = (VulkanFramebuffer *)luaL_checkudata(L, 1, "VulkanFramebuffer");
+  if (framebuffer_ptr->framebuffer && framebuffer_ptr->device) {
+      vkDestroyFramebuffer(framebuffer_ptr->device, framebuffer_ptr->framebuffer, NULL);
+      framebuffer_ptr->framebuffer = VK_NULL_HANDLE;
+  }
+  if (framebuffer_ptr->imageView && framebuffer_ptr->device) {
+      vkDestroyImageView(framebuffer_ptr->device, framebuffer_ptr->imageView, NULL);
+      framebuffer_ptr->imageView = VK_NULL_HANDLE;
+  }
+  return 0;
 }
 
 static int l_vulkan_VK_CreateShaderModule(lua_State *L) {
@@ -575,146 +582,103 @@ static int l_vulkan_VK_DestroyShaderModule(lua_State *L) {
 }
 
 static int l_vulkan_VK_CreateGraphicsPipelines(lua_State *L) {
-    VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
-    VulkanShaderModule *vertShader_ptr = (VulkanShaderModule *)luaL_checkudata(L, 2, "VulkanShaderModule");
-    VulkanShaderModule *fragShader_ptr = (VulkanShaderModule *)luaL_checkudata(L, 3, "VulkanShaderModule");
-    VulkanRenderPass *renderPass_ptr = (VulkanRenderPass *)luaL_checkudata(L, 4, "VulkanRenderPass");
-    luaL_checktype(L, 5, LUA_TTABLE);
+  VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanShaderModule *vertShader_ptr = (VulkanShaderModule *)luaL_checkudata(L, 2, "VulkanShaderModule");
+  VulkanShaderModule *fragShader_ptr = (VulkanShaderModule *)luaL_checkudata(L, 3, "VulkanShaderModule");
+  VulkanRenderPass *renderPass_ptr = (VulkanRenderPass *)luaL_checkudata(L, 4, "VulkanRenderPass");
+  luaL_checktype(L, 5, LUA_TTABLE);
 
-    lua_getfield(L, 5, "width");
-    uint32_t width = (uint32_t)luaL_checkinteger(L, -1);
-    lua_pop(L, 1);
-    lua_getfield(L, 5, "height");
-    uint32_t height = (uint32_t)luaL_checkinteger(L, -1);
-    lua_pop(L, 1);
+  lua_getfield(L, 5, "width");
+  uint32_t width = (uint32_t)luaL_checkinteger(L, -1);
+  lua_pop(L, 1);
+  lua_getfield(L, 5, "height");
+  uint32_t height = (uint32_t)luaL_checkinteger(L, -1);
+  lua_pop(L, 1);
 
-    VkPipelineShaderStageCreateInfo shaderStages[] = {
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = vertShader_ptr->shaderModule,
-            .pName = "main"
-        },
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = fragShader_ptr->shaderModule,
-            .pName = "main"
-        }
-    };
+  VkPipelineShaderStageCreateInfo vertShaderStageInfo = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+      .stage = VK_SHADER_STAGE_VERTEX_BIT,
+      .module = vertShader_ptr->shaderModule,
+      .pName = "main"
+  };
+  VkPipelineShaderStageCreateInfo fragShaderStageInfo = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+      .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+      .module = fragShader_ptr->shaderModule,
+      .pName = "main"
+  };
+  VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount = 0,
-        .pVertexBindingDescriptions = NULL,
-        .vertexAttributeDescriptionCount = 0,
-        .pVertexAttributeDescriptions = NULL
-    };
-
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        .primitiveRestartEnable = VK_FALSE
-    };
-
-    VkViewport viewport = {
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = (float)width,
-        .height = (float)height,
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f
-    };
-
-    VkRect2D scissor = {
-        .offset = {0, 0},
-        .extent = {width, height}
-    };
-
-    VkPipelineViewportStateCreateInfo viewportState = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-        .viewportCount = 1,
-        .pViewports = &viewport,
-        .scissorCount = 1,
-        .pScissors = &scissor
-    };
-
-    VkPipelineRasterizationStateCreateInfo rasterizer = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        .depthClampEnable = VK_FALSE,
-        .rasterizerDiscardEnable = VK_FALSE,
-        .polygonMode = VK_POLYGON_MODE_FILL,
-        .lineWidth = 1.0f,
-        .cullMode = VK_CULL_MODE_BACK_BIT,
-        .frontFace = VK_FRONT_FACE_CLOCKWISE,
-        .depthBiasEnable = VK_FALSE
-    };
-
-    VkPipelineMultisampleStateCreateInfo multisampling = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .sampleShadingEnable = VK_FALSE,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
-    };
-
-    VkPipelineColorBlendAttachmentState colorBlendAttachment = {
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-        .blendEnable = VK_FALSE
-    };
-
-    VkPipelineColorBlendStateCreateInfo colorBlending = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .logicOpEnable = VK_FALSE,
-        .attachmentCount = 1,
-        .pAttachments = &colorBlendAttachment
-    };
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 0,
-        .pSetLayouts = NULL,
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges = NULL
-    };
-
-    VkPipelineLayout pipelineLayout;
-    VkResult result = vkCreatePipelineLayout(device_ptr->device, &pipelineLayoutInfo, NULL, &pipelineLayout);
-    if (result != VK_SUCCESS) {
-        lua_pushnil(L);
-        lua_pushstring(L, "Failed to create pipeline layout");
-        return 2;
-    }
-
-    VkGraphicsPipelineCreateInfo pipelineInfo = {
-        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .stageCount = 2,
-        .pStages = shaderStages,
-        .pVertexInputState = &vertexInputInfo,
-        .pInputAssemblyState = &inputAssembly,
-        .pViewportState = &viewportState,
-        .pRasterizationState = &rasterizer,
-        .pMultisampleState = &multisampling,
-        .pColorBlendState = &colorBlending,
-        .layout = pipelineLayout,
-        .renderPass = renderPass_ptr->renderPass,
-        .subpass = 0,
-        .basePipelineHandle = VK_NULL_HANDLE
-    };
-
-    VkPipeline graphicsPipeline;
-    result = vkCreateGraphicsPipelines(device_ptr->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &graphicsPipeline);
-    vkDestroyPipelineLayout(device_ptr->device, pipelineLayout, NULL);
-    if (result != VK_SUCCESS) {
-        lua_pushnil(L);
-        lua_pushstring(L, "Failed to create graphics pipeline");
-        return 2;
-    }
-
-    VulkanPipeline *pipeline_ptr = (VulkanPipeline *)lua_newuserdata(L, sizeof(VulkanPipeline));
-    pipeline_ptr->pipeline = graphicsPipeline;
-    pipeline_ptr->device = device_ptr->device;
-    luaL_getmetatable(L, "VulkanPipeline");
-    lua_setmetatable(L, -2);
-    return 1;
+  VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+      .vertexBindingDescriptionCount = 0,
+      .vertexAttributeDescriptionCount = 0
+  };
+  VkPipelineInputAssemblyStateCreateInfo inputAssembly = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+      .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+      .primitiveRestartEnable = VK_FALSE
+  };
+  VkViewport viewport = {0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f};
+  VkRect2D scissor = {{0, 0}, {width, height}};
+  VkPipelineViewportStateCreateInfo viewportState = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+      .viewportCount = 1,
+      .pViewports = &viewport,
+      .scissorCount = 1,
+      .pScissors = &scissor
+  };
+  VkPipelineRasterizationStateCreateInfo rasterizer = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+      .depthClampEnable = VK_FALSE,
+      .rasterizerDiscardEnable = VK_FALSE,
+      .polygonMode = VK_POLYGON_MODE_FILL,
+      .lineWidth = 1.0f,
+      .cullMode = VK_CULL_MODE_BACK_BIT,
+      .frontFace = VK_FRONT_FACE_CLOCKWISE,
+      .depthBiasEnable = VK_FALSE
+  };
+  VkPipelineMultisampleStateCreateInfo multisampling = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+      .sampleShadingEnable = VK_FALSE,
+      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
+  };
+  VkPipelineColorBlendAttachmentState colorBlendAttachment = {
+      .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+      .blendEnable = VK_FALSE
+  };
+  VkPipelineColorBlendStateCreateInfo colorBlending = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+      .logicOpEnable = VK_FALSE,
+      .attachmentCount = 1,
+      .pAttachments = &colorBlendAttachment
+  };
+  VkGraphicsPipelineCreateInfo pipelineInfo = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+      .stageCount = 2,
+      .pStages = shaderStages,
+      .pVertexInputState = &vertexInputInfo,
+      .pInputAssemblyState = &inputAssembly,
+      .pViewportState = &viewportState,
+      .pRasterizationState = &rasterizer,
+      .pMultisampleState = &multisampling,
+      .pColorBlendState = &colorBlending,
+      .renderPass = renderPass_ptr->renderPass,
+      .subpass = 0
+  };
+  VkPipeline pipeline;
+  VkResult result = vkCreateGraphicsPipelines(device_ptr->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &pipeline);
+  if (result != VK_SUCCESS) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to create graphics pipeline");
+      return 2;
+  }
+  VulkanPipeline *pipeline_ptr = (VulkanPipeline *)lua_newuserdata(L, sizeof(VulkanPipeline));
+  pipeline_ptr->pipeline = pipeline;
+  pipeline_ptr->device = device_ptr->device;
+  luaL_getmetatable(L, "VulkanPipeline");
+  lua_setmetatable(L, -2);
+  return 1;
 }
 
 static int l_vulkan_VK_DestroyPipeline(lua_State *L) {
@@ -796,88 +760,137 @@ static int l_vulkan_VK_AllocateCommandBuffers(lua_State *L) {
 }
 
 static int l_vulkan_VK_BeginCommandBuffer(lua_State *L) {
-    VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
+  VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
 
-    VkCommandBufferBeginInfo beginInfo = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
-    };
+  if (!cmd_ptr->commandBuffer) {
+      lua_pushboolean(L, false);
+      lua_pushstring(L, "Command buffer is null");
+      return 2;
+  }
 
-    VkResult result = vkBeginCommandBuffer(cmd_ptr->commandBuffer, &beginInfo);
-    if (result != VK_SUCCESS) {
-        lua_pushboolean(L, false);
-        lua_pushstring(L, "Failed to begin command buffer");
-        return 2;
-    }
+  VkCommandBufferBeginInfo beginInfo = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+      .flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
+  };
 
-    lua_pushboolean(L, true);
-    return 1;
+  VkResult result = vkBeginCommandBuffer(cmd_ptr->commandBuffer, &beginInfo);
+  if (result != VK_SUCCESS) {
+      lua_pushboolean(L, false);
+      switch (result) {
+          case VK_ERROR_OUT_OF_HOST_MEMORY: lua_pushstring(L, "Out of host memory"); break;
+          case VK_ERROR_OUT_OF_DEVICE_MEMORY: lua_pushstring(L, "Out of device memory"); break;
+          default: lua_pushstring(L, "Failed to begin command buffer");
+      }
+      return 2;
+  }
+
+  lua_pushboolean(L, true);
+  return 1;
 }
+
+
 
 static int l_vulkan_VK_EndCommandBuffer(lua_State *L) {
-    VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
+  VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
 
-    VkResult result = vkEndCommandBuffer(cmd_ptr->commandBuffer);
-    if (result != VK_SUCCESS) {
-        lua_pushboolean(L, false);
-        lua_pushstring(L, "Failed to end command buffer");
-        return 2;
-    }
+  if (!cmd_ptr->commandBuffer) {
+      lua_pushboolean(L, false);
+      lua_pushstring(L, "Command buffer is null");
+      return 2;
+  }
 
-    lua_pushboolean(L, true);
-    return 1;
+  VkResult result = vkEndCommandBuffer(cmd_ptr->commandBuffer);
+  if (result != VK_SUCCESS) {
+      lua_pushboolean(L, false);
+      switch (result) {
+          case VK_ERROR_OUT_OF_HOST_MEMORY: lua_pushstring(L, "Out of host memory"); break;
+          case VK_ERROR_OUT_OF_DEVICE_MEMORY: lua_pushstring(L, "Out of device memory"); break;
+          default: lua_pushstring(L, "Failed to end command buffer");
+      }
+      return 2;
+  }
+
+  lua_pushboolean(L, true);
+  return 1;
 }
+
 
 static int l_vulkan_VK_CmdBeginRenderPass(lua_State *L) {
-    VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
-    VulkanRenderPass *renderPass_ptr = (VulkanRenderPass *)luaL_checkudata(L, 2, "VulkanRenderPass");
-    VulkanFramebuffer *framebuffer_ptr = (VulkanFramebuffer *)luaL_checkudata(L, 3, "VulkanFramebuffer");
-    luaL_checktype(L, 4, LUA_TTABLE);  // Extent
+  VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
+  VulkanRenderPass *renderPass_ptr = (VulkanRenderPass *)luaL_checkudata(L, 2, "VulkanRenderPass");
+  VulkanFramebuffer *framebuffer_ptr = (VulkanFramebuffer *)luaL_checkudata(L, 3, "VulkanFramebuffer");
+  luaL_checktype(L, 4, LUA_TTABLE);
 
-    lua_getfield(L, 4, "width");
-    uint32_t width = (uint32_t)luaL_checkinteger(L, -1);
-    lua_pop(L, 1);
-    lua_getfield(L, 4, "height");
-    uint32_t height = (uint32_t)luaL_checkinteger(L, -1);
-    lua_pop(L, 1);
+  if (!cmd_ptr->commandBuffer || !renderPass_ptr->renderPass || !framebuffer_ptr->framebuffer) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Invalid command buffer, render pass, or framebuffer");
+      return 2;
+  }
 
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-    VkRenderPassBeginInfo renderPassInfo = {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = renderPass_ptr->renderPass,
-        .framebuffer = framebuffer_ptr->framebuffer,
-        .renderArea = {{0, 0}, {width, height}},
-        .clearValueCount = 1,
-        .pClearValues = &clearColor
-    };
+  lua_getfield(L, 4, "width");
+  uint32_t width = (uint32_t)luaL_checkinteger(L, -1);
+  lua_pop(L, 1);
+  lua_getfield(L, 4, "height");
+  uint32_t height = (uint32_t)luaL_checkinteger(L, -1);
+  lua_pop(L, 1);
 
-    vkCmdBeginRenderPass(cmd_ptr->commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    return 0;
+  VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+  VkRenderPassBeginInfo renderPassInfo = {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+      .renderPass = renderPass_ptr->renderPass,
+      .framebuffer = framebuffer_ptr->framebuffer,
+      .renderArea = {{0, 0}, {width, height}},
+      .clearValueCount = 1,
+      .pClearValues = &clearColor
+  };
+
+  vkCmdBeginRenderPass(cmd_ptr->commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+  return 0;
 }
 
+
 static int l_vulkan_VK_CmdEndRenderPass(lua_State *L) {
-    VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
-    vkCmdEndRenderPass(cmd_ptr->commandBuffer);
-    return 0;
+  VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
+
+  if (!cmd_ptr->commandBuffer) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Invalid command buffer");
+      return 2;
+  }
+
+  vkCmdEndRenderPass(cmd_ptr->commandBuffer);
+  return 0;
 }
 
 static int l_vulkan_VK_CmdBindPipeline(lua_State *L) {
-    VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
-    VulkanPipeline *pipeline_ptr = (VulkanPipeline *)luaL_checkudata(L, 2, "VulkanPipeline");
+  VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
+  VulkanPipeline *pipeline_ptr = (VulkanPipeline *)luaL_checkudata(L, 2, "VulkanPipeline");
 
-    vkCmdBindPipeline(cmd_ptr->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_ptr->pipeline);
-    return 0;
+  if (!cmd_ptr->commandBuffer || !pipeline_ptr->pipeline) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Invalid command buffer or pipeline");
+      return 2;
+  }
+
+  vkCmdBindPipeline(cmd_ptr->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_ptr->pipeline);
+  return 0;
 }
 
 static int l_vulkan_VK_CmdDraw(lua_State *L) {
-    VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
-    uint32_t vertexCount = (uint32_t)luaL_checkinteger(L, 2);
-    uint32_t instanceCount = (uint32_t)luaL_checkinteger(L, 3);
-    uint32_t firstVertex = (uint32_t)luaL_checkinteger(L, 4);
-    uint32_t firstInstance = (uint32_t)luaL_checkinteger(L, 5);
+  VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
+  uint32_t vertexCount = (uint32_t)luaL_checkinteger(L, 2);
+  uint32_t instanceCount = (uint32_t)luaL_checkinteger(L, 3);
+  uint32_t firstVertex = (uint32_t)luaL_checkinteger(L, 4);
+  uint32_t firstInstance = (uint32_t)luaL_checkinteger(L, 5);
 
-    vkCmdDraw(cmd_ptr->commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
-    return 0;
+  if (!cmd_ptr->commandBuffer) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Invalid command buffer");
+      return 2;
+  }
+
+  vkCmdDraw(cmd_ptr->commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+  return 0;
 }
 
 static int l_vulkan_VK_CreateSemaphore(lua_State *L) {
@@ -929,37 +942,63 @@ static int l_vulkan_VK_AcquireNextImageKHR(lua_State *L) {
     return 1;
 }
 
-static int l_vulkan_VK_QueueSubmit(lua_State *L) {
-    VkQueue queue = (VkQueue)lua_touserdata(L, 1);
-    VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 2, "VulkanCommandBuffer");
-    VulkanSemaphore *waitSemaphore_ptr = (VulkanSemaphore *)luaL_checkudata(L, 3, "VulkanSemaphore");
-    VulkanSemaphore *signalSemaphore_ptr = (VulkanSemaphore *)luaL_checkudata(L, 4, "VulkanSemaphore");
-
-    VkSemaphore waitSemaphores[] = {waitSemaphore_ptr->semaphore};
-    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    VkSemaphore signalSemaphores[] = {signalSemaphore_ptr->semaphore};
-
-    VkSubmitInfo submitInfo = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = waitSemaphores,
-        .pWaitDstStageMask = waitStages,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &cmd_ptr->commandBuffer,
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores = signalSemaphores
-    };
-
-    VkResult result = vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-    if (result != VK_SUCCESS) {
-        lua_pushboolean(L, false);
-        lua_pushstring(L, "Failed to submit queue");
-        return 2;
+// Add this helper if not already present (for older LuaJIT compatibility)
+#if !defined(luaL_testudata)
+void *luaL_testudata(lua_State *L, int ud, const char *tname) {
+    void *p = lua_touserdata(L, ud);
+    if (p != NULL && lua_getmetatable(L, ud)) {
+        luaL_getmetatable(L, tname);
+        if (!lua_rawequal(L, -1, -2)) p = NULL;
+        lua_pop(L, 2);
     }
-
-    lua_pushboolean(L, true);
-    return 1;
+    return p;
 }
+#endif
+
+static int l_vulkan_VK_QueueSubmit(lua_State *L) {
+  VkQueue queue = (VkQueue)lua_touserdata(L, 1);
+  VulkanCommandBuffer *cmd_ptr = (VulkanCommandBuffer *)luaL_checkudata(L, 2, "VulkanCommandBuffer");
+  VulkanSemaphore *waitSemaphore_ptr = (VulkanSemaphore *)luaL_checkudata(L, 3, "VulkanSemaphore");
+  VulkanSemaphore *signalSemaphore_ptr = (VulkanSemaphore *)luaL_checkudata(L, 4, "VulkanSemaphore");
+  VulkanFence *fence_ptr = NULL;
+
+  // Check if 5th argument is a VulkanFence userdata or nil
+  if (lua_gettop(L) >= 5 && !lua_isnil(L, 5)) {
+      fence_ptr = (VulkanFence *)luaL_testudata(L, 5, "VulkanFence");
+      if (!fence_ptr) {
+          lua_pushboolean(L, false);
+          lua_pushstring(L, "Argument 5 must be a VulkanFence or nil");
+          return 2;
+      }
+  }
+
+  VkSemaphore waitSemaphores[] = {waitSemaphore_ptr->semaphore};
+  VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+  VkSemaphore signalSemaphores[] = {signalSemaphore_ptr->semaphore};
+
+  VkSubmitInfo submitInfo = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .waitSemaphoreCount = 1,
+      .pWaitSemaphores = waitSemaphores,
+      .pWaitDstStageMask = waitStages,
+      .commandBufferCount = 1,
+      .pCommandBuffers = &cmd_ptr->commandBuffer,
+      .signalSemaphoreCount = 1,
+      .pSignalSemaphores = signalSemaphores
+  };
+
+  VkResult result = vkQueueSubmit(queue, 1, &submitInfo, fence_ptr ? fence_ptr->fence : VK_NULL_HANDLE);
+  if (result != VK_SUCCESS) {
+      lua_pushboolean(L, false);
+      lua_pushstring(L, "Failed to submit queue");
+      return 2;
+  }
+
+  lua_pushboolean(L, true);
+  return 1;
+}
+
+
 
 static int l_vulkan_VK_QueuePresentKHR(lua_State *L) {
     VkQueue queue = (VkQueue)lua_touserdata(L, 1);
@@ -1000,6 +1039,76 @@ static int l_vulkan_VK_QueueWaitIdle(lua_State *L) {
     return 1;
 }
 
+// New fence creation function
+static int l_vulkan_VK_CreateFence(lua_State *L) {
+  VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+
+  VkFenceCreateInfo fenceInfo = {
+      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+      .flags = VK_FENCE_CREATE_SIGNALED_BIT
+  };
+
+  VkFence fence;
+  VkResult result = vkCreateFence(device_ptr->device, &fenceInfo, NULL, &fence);
+  if (result != VK_SUCCESS) {
+      lua_pushnil(L);
+      lua_pushstring(L, "Failed to create fence");
+      return 2;
+  }
+
+  VulkanFence *fence_ptr = (VulkanFence *)lua_newuserdata(L, sizeof(VulkanFence));
+  fence_ptr->fence = fence;
+  fence_ptr->device = device_ptr->device;
+  luaL_getmetatable(L, "VulkanFence");
+  lua_setmetatable(L, -2);
+  return 1;
+}
+
+// New fence destruction function
+static int l_vulkan_VK_DestroyFence(lua_State *L) {
+  VulkanFence *fence_ptr = (VulkanFence *)luaL_checkudata(L, 1, "VulkanFence");
+  if (fence_ptr->fence && fence_ptr->device) {
+      vkDestroyFence(fence_ptr->device, fence_ptr->fence, NULL);
+      fence_ptr->fence = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+// New wait for fences function
+static int l_vulkan_VK_WaitForFences(lua_State *L) {
+  VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanFence *fence_ptr = (VulkanFence *)luaL_checkudata(L, 2, "VulkanFence");
+  uint64_t timeout = (uint64_t)luaL_checkinteger(L, 3);
+
+  VkResult result = vkWaitForFences(device_ptr->device, 1, &fence_ptr->fence, VK_TRUE, timeout);
+  if (result != VK_SUCCESS) {
+      lua_pushboolean(L, false);
+      lua_pushstring(L, result == VK_TIMEOUT ? "Fence wait timed out" : "Failed to wait for fence");
+      return 2;
+  }
+
+  lua_pushboolean(L, true);
+  return 1;
+}
+
+
+
+// New reset fences function
+static int l_vulkan_VK_ResetFences(lua_State *L) {
+  VulkanDevice *device_ptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanFence *fence_ptr = (VulkanFence *)luaL_checkudata(L, 2, "VulkanFence");
+
+  VkResult result = vkResetFences(device_ptr->device, 1, &fence_ptr->fence);
+  if (result != VK_SUCCESS) {
+      lua_pushboolean(L, false);
+      lua_pushstring(L, "Failed to reset fence");
+      return 2;
+  }
+
+  lua_pushboolean(L, true);
+  return 1;
+}
+
 static const luaL_Reg vulkan_funcs[] = {
     {"VK_CreateInstanceHelper", l_vulkan_VK_CreateInstanceHelper},
     {"VK_DestroyInstance", l_vulkan_VK_DestroyInstance},
@@ -1037,7 +1146,16 @@ static const luaL_Reg vulkan_funcs[] = {
     {"VK_QueueSubmit", l_vulkan_VK_QueueSubmit},
     {"VK_QueuePresentKHR", l_vulkan_VK_QueuePresentKHR},
     {"VK_QueueWaitIdle", l_vulkan_VK_QueueWaitIdle},
+    {"VK_CreateFence", l_vulkan_VK_CreateFence},           // New
+    {"VK_DestroyFence", l_vulkan_VK_DestroyFence},         // New
+    {"VK_WaitForFences", l_vulkan_VK_WaitForFences},       // New
+    {"VK_ResetFences", l_vulkan_VK_ResetFences},           // New
     {NULL, NULL}
+};
+
+static const luaL_Reg fence_mt[] = {
+  {"__gc", l_vulkan_VK_DestroyFence},
+  {NULL, NULL}
 };
 
 static const luaL_Reg instance_mt[] = {
@@ -1136,6 +1254,11 @@ int luaopen_vulkan(lua_State *L) {
 
     luaL_newmetatable(L, "VulkanSemaphore");
     luaL_setfuncs(L, semaphore_mt, 0);
+    lua_pop(L, 1);
+
+    // New fence metatable
+    luaL_newmetatable(L, "VulkanFence");
+    luaL_setfuncs(L, fence_mt, 0);
     lua_pop(L, 1);
 
     luaL_newlib(L, vulkan_funcs);

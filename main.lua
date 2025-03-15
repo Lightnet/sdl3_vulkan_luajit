@@ -115,7 +115,7 @@ print("Graphics queue retrieved")
 
 local swapchainImages, err = vulkan.VK_GetSwapchainImagesKHR(device, swapchain)
 if not swapchainImages then
-    print("Failed to get swapchain images: " .. (err or "No error message"))
+    print("Swapchain images retrieval failed: " .. (err or "No error message"))
     vulkan.VK_DestroySwapchainKHR(swapchain)
     vulkan.VK_DestroyDevice(device)
     vulkan.VK_DestroySurfaceKHR(surface)
@@ -139,9 +139,10 @@ print("Render pass created")
 
 local framebuffers = {}
 for i, image in ipairs(swapchainImages) do
-    local framebuffer, err = vulkan.VK_CreateFramebuffer(device, renderPass, image, extent)
+    print("Creating framebuffer " .. i .. " with image " .. tostring(image))
+    local framebuffer, fb_err = vulkan.VK_CreateFramebuffer(device, renderPass, image, extent)
     if not framebuffer then
-        print("Framebuffer " .. i .. " creation failed: " .. (err or "No error message"))
+        print("Framebuffer " .. i .. " creation failed: " .. (fb_err or "No error message"))
         for _, fb in ipairs(framebuffers) do
             vulkan.VK_DestroyFramebuffer(fb)
         end
@@ -154,6 +155,7 @@ for i, image in ipairs(swapchainImages) do
         return
     end
     table.insert(framebuffers, framebuffer)
+    print("Framebuffer " .. i .. " created")
 end
 print("Framebuffers created: " .. #framebuffers)
 
@@ -247,52 +249,106 @@ if not commandBuffers then
 end
 print("Command buffers allocated: " .. #commandBuffers)
 
+
 for i, cmd in ipairs(commandBuffers) do
-    local success, err = vulkan.VK_BeginCommandBuffer(cmd)
-    if not success then
-        print("Failed to begin command buffer " .. i .. ": " .. (err or "No error message"))
-        vulkan.VK_DestroyCommandPool(commandPool)
-        vulkan.VK_DestroyPipeline(pipeline)
-        vulkan.VK_DestroyShaderModule(fragShader)
-        vulkan.VK_DestroyShaderModule(vertShader)
-        for _, fb in ipairs(framebuffers) do
-            vulkan.VK_DestroyFramebuffer(fb)
-        end
-        vulkan.VK_DestroyRenderPass(renderPass)
-        vulkan.VK_DestroySwapchainKHR(swapchain)
-        vulkan.VK_DestroyDevice(device)
-        vulkan.VK_DestroySurfaceKHR(surface)
-        vulkan.VK_DestroyInstance(instance)
-        sdl3.SDL_Quit()
-        return
-    end
+  print("Recording command buffer " .. i)
+  if not cmd then
+      print("Command buffer " .. i .. " is nil")
+      vulkan.VK_DestroyCommandPool(commandPool)
+      vulkan.VK_DestroyPipeline(pipeline)
+      vulkan.VK_DestroyShaderModule(fragShader)
+      vulkan.VK_DestroyShaderModule(vertShader)
+      for _, fb in ipairs(framebuffers) do
+          vulkan.VK_DestroyFramebuffer(fb)
+      end
+      vulkan.VK_DestroyRenderPass(renderPass)
+      vulkan.VK_DestroySwapchainKHR(swapchain)
+      vulkan.VK_DestroyDevice(device)
+      vulkan.VK_DestroySurfaceKHR(surface)
+      vulkan.VK_DestroyInstance(instance)
+      sdl3.SDL_Quit()
+      return
+  end
 
-    vulkan.VK_CmdBeginRenderPass(cmd, renderPass, framebuffers[i], extent)
-    vulkan.VK_CmdBindPipeline(cmd, pipeline)
-    vulkan.VK_CmdDraw(cmd, 3, 1, 0, 0)  -- 3 vertices, 1 instance
-    vulkan.VK_CmdEndRenderPass(cmd)
+  local success, err = vulkan.VK_BeginCommandBuffer(cmd)
+  if not success then
+      print("Failed to begin command buffer " .. i .. ": " .. (err or "No error message"))
+      vulkan.VK_DestroyCommandPool(commandPool)
+      vulkan.VK_DestroyPipeline(pipeline)
+      vulkan.VK_DestroyShaderModule(fragShader)
+      vulkan.VK_DestroyShaderModule(vertShader)
+      for _, fb in ipairs(framebuffers) do
+          vulkan.VK_DestroyFramebuffer(fb)
+      end
+      vulkan.VK_DestroyRenderPass(renderPass)
+      vulkan.VK_DestroySwapchainKHR(swapchain)
+      vulkan.VK_DestroyDevice(device)
+      vulkan.VK_DestroySurfaceKHR(surface)
+      vulkan.VK_DestroyInstance(instance)
+      sdl3.SDL_Quit()
+      return
+  end
+  print("Command buffer " .. i .. ": Begin successful")
 
-    success, err = vulkan.VK_EndCommandBuffer(cmd)
-    if not success then
-        print("Failed to end command buffer " .. i .. ": " .. (err or "No error message"))
-        vulkan.VK_DestroyCommandPool(commandPool)
-        vulkan.VK_DestroyPipeline(pipeline)
-        vulkan.VK_DestroyShaderModule(fragShader)
-        vulkan.VK_DestroyShaderModule(vertShader)
-        for _, fb in ipairs(framebuffers) do
-            vulkan.VK_DestroyFramebuffer(fb)
-        end
-        vulkan.VK_DestroyRenderPass(renderPass)
-        vulkan.VK_DestroySwapchainKHR(swapchain)
-        vulkan.VK_DestroyDevice(device)
-        vulkan.VK_DestroySurfaceKHR(surface)
-        vulkan.VK_DestroyInstance(instance)
-        sdl3.SDL_Quit()
-        return
-    end
+  if not framebuffers[i] then
+      print("Framebuffer " .. i .. " is nil")
+      vulkan.VK_EndCommandBuffer(cmd)
+      vulkan.VK_DestroyCommandPool(commandPool)
+      vulkan.VK_DestroyPipeline(pipeline)
+      vulkan.VK_DestroyShaderModule(fragShader)
+      vulkan.VK_DestroyShaderModule(vertShader)
+      for _, fb in ipairs(framebuffers) do
+          vulkan.VK_DestroyFramebuffer(fb)
+      end
+      vulkan.VK_DestroyRenderPass(renderPass)
+      vulkan.VK_DestroySwapchainKHR(swapchain)
+      vulkan.VK_DestroyDevice(device)
+      vulkan.VK_DestroySurfaceKHR(surface)
+      vulkan.VK_DestroyInstance(instance)
+      sdl3.SDL_Quit()
+      return
+  end
+
+  print("Command buffer " .. i .. ": Beginning render pass...")
+  vulkan.VK_CmdBeginRenderPass(cmd, renderPass, framebuffers[i], extent)
+  print("Command buffer " .. i .. ": Render pass begun")
+
+  print("Command buffer " .. i .. ": Binding pipeline...")
+  vulkan.VK_CmdBindPipeline(cmd, pipeline)
+  print("Command buffer " .. i .. ": Pipeline bound")
+
+  print("Command buffer " .. i .. ": Drawing triangle...")
+  vulkan.VK_CmdDraw(cmd, 3, 1, 0, 0)
+  print("Command buffer " .. i .. ": Triangle drawn")
+
+  print("Command buffer " .. i .. ": Ending render pass...")
+  vulkan.VK_CmdEndRenderPass(cmd)
+  print("Command buffer " .. i .. ": Render pass ended")
+
+  success, err = vulkan.VK_EndCommandBuffer(cmd)
+  if not success then
+      print("Failed to end command buffer " .. i .. ": " .. (err or "No error message"))
+      vulkan.VK_DestroyCommandPool(commandPool)
+      vulkan.VK_DestroyPipeline(pipeline)
+      vulkan.VK_DestroyShaderModule(fragShader)
+      vulkan.VK_DestroyShaderModule(vertShader)
+      for _, fb in ipairs(framebuffers) do
+          vulkan.VK_DestroyFramebuffer(fb)
+      end
+      vulkan.VK_DestroyRenderPass(renderPass)
+      vulkan.VK_DestroySwapchainKHR(swapchain)
+      vulkan.VK_DestroyDevice(device)
+      vulkan.VK_DestroySurfaceKHR(surface)
+      vulkan.VK_DestroyInstance(instance)
+      sdl3.SDL_Quit()
+      return
+  end
+  print("Command buffer " .. i .. " recorded")
 end
 print("Command buffers recorded")
 
+
+print("Creating image available semaphore...")
 local imageAvailableSemaphore, err = vulkan.VK_CreateSemaphore(device)
 if not imageAvailableSemaphore then
     print("Image available semaphore creation failed: " .. (err or "No error message"))
@@ -313,6 +369,7 @@ if not imageAvailableSemaphore then
 end
 print("Image available semaphore created")
 
+print("Creating render finished semaphore...")
 local renderFinishedSemaphore, err = vulkan.VK_CreateSemaphore(device)
 if not renderFinishedSemaphore then
     print("Render finished semaphore creation failed: " .. (err or "No error message"))
@@ -334,6 +391,37 @@ if not renderFinishedSemaphore then
 end
 print("Render finished semaphore created")
 
+print("Creating fences...")
+local fences = {}
+for i = 1, #framebuffers do
+    local fence, err = vulkan.VK_CreateFence(device)
+    if not fence then
+        print("Fence " .. i .. " creation failed: " .. (err or "No error message"))
+        for _, f in ipairs(fences) do
+            vulkan.VK_DestroyFence(f)
+        end
+        vulkan.VK_DestroySemaphore(renderFinishedSemaphore)
+        vulkan.VK_DestroySemaphore(imageAvailableSemaphore)
+        vulkan.VK_DestroyCommandPool(commandPool)
+        vulkan.VK_DestroyPipeline(pipeline)
+        vulkan.VK_DestroyShaderModule(fragShader)
+        vulkan.VK_DestroyShaderModule(vertShader)
+        for _, fb in ipairs(framebuffers) do
+            vulkan.VK_DestroyFramebuffer(fb)
+        end
+        vulkan.VK_DestroyRenderPass(renderPass)
+        vulkan.VK_DestroySwapchainKHR(swapchain)
+        vulkan.VK_DestroyDevice(device)
+        vulkan.VK_DestroySurfaceKHR(surface)
+        vulkan.VK_DestroyInstance(instance)
+        sdl3.SDL_Quit()
+        return
+    end
+    table.insert(fences, fence)
+    print("Fence " .. i .. " created")
+end
+print("Fences created: " .. #fences)
+
 if arg and #arg > 0 then
     print("Arguments:")
     for i, v in ipairs(arg) do
@@ -345,46 +433,90 @@ end
 
 print("Hello from main.lua! Vulkan API: " .. vulkan.API_VERSION_1_4)
 
+print("Entering render loop...")
 local done = false
 while not done do
     local event_type = sdl3.SDL_PollEvent()
     while event_type do
-        if event_type == sdl3.EVENT_QUIT then
+        print("Event type received: " .. tostring(event_type))  -- Debug: log all events
+        -- Try SDL_EVENT_QUIT first, then fall back to EVENT_QUIT or a numeric value
+        -- if event_type == sdl3.SDL_EVENT_QUIT or event_type == 256 then  -- 256 is SDL_EVENT_QUIT in SDL3
+        if event_type == sdl3.SDL_EVENT_QUIT then  -- 256 is SDL_EVENT_QUIT in SDL3
             done = true
+            print("Quit event received")
+            break
         end
         event_type = sdl3.SDL_PollEvent()
     end
 
-    local imageIndex, err = vulkan.VK_AcquireNextImageKHR(device, swapchain, imageAvailableSemaphore)
-    if not imageIndex then
-        print("Failed to acquire next image: " .. (err or "No error message"))
-        break
-    end
+    if not done then
+        -- ... (rest of the render loop remains unchanged) ...
+        print("Acquiring next image...")
+        local imageIndex, err = vulkan.VK_AcquireNextImageKHR(device, swapchain, imageAvailableSemaphore)
+        if not imageIndex then
+            print("Failed to acquire next image: " .. (err or "No error message"))
+            done = true
+            break
+        end
+        print("Image acquired: " .. imageIndex)
 
-    local success, err = vulkan.VK_QueueSubmit(graphicsQueue, commandBuffers[imageIndex], imageAvailableSemaphore, renderFinishedSemaphore)
-    if not success then
-        print("Queue submit failed: " .. (err or "No error message"))
-        break
-    end
+        print("Waiting for fence " .. imageIndex .. "...")
+        local success, err = vulkan.VK_WaitForFences(device, fences[imageIndex], 1000000000)
+        if not success then
+            print("Failed to wait for fence " .. imageIndex .. ": " .. (err or "No error message"))
+            done = true
+            break
+        end
 
-    success, err = vulkan.VK_QueuePresentKHR(graphicsQueue, swapchain, imageIndex, renderFinishedSemaphore)
-    if not success then
-        print("Queue present failed: " .. (err or "No error message"))
-        break
-    end
+        print("Resetting fence " .. imageIndex .. "...")
+        success, err = vulkan.VK_ResetFences(device, fences[imageIndex])
+        if not success then
+            print("Failed to reset fence " .. imageIndex .. ": " .. (err or "No error message"))
+            done = true
+            break
+        end
 
-    vulkan.VK_QueueWaitIdle(graphicsQueue)
-    sdl3.SDL_Delay(16)
+        print("Submitting queue for image " .. imageIndex .. "...")
+        success, err = vulkan.VK_QueueSubmit(graphicsQueue, commandBuffers[imageIndex], imageAvailableSemaphore, renderFinishedSemaphore, fences[imageIndex])
+        if not success then
+            print("Queue submit failed: " .. (err or "No error message"))
+            done = true
+            break
+        end
+
+        print("Presenting image " .. imageIndex .. "...")
+        success, err = vulkan.VK_QueuePresentKHR(graphicsQueue, swapchain, imageIndex, renderFinishedSemaphore)
+        if not success then
+            print("Queue present failed: " .. (err or "No error message"))
+            done = true
+            break
+        end
+
+        sdl3.SDL_Delay(16)  -- ~60 FPS
+    end
+end
+print("Exited render loop")
+
+-- Wait for GPU to finish
+print("Waiting for queue to idle...")
+local success, err = vulkan.VK_QueueWaitIdle(graphicsQueue)
+if not success then
+    print("Queue wait idle failed: " .. (err or "No error message"))
 end
 
+-- Cleanup
+print("Cleaning up...")
+for i, fence in ipairs(fences) do
+    vulkan.VK_DestroyFence(fence)
+end
 vulkan.VK_DestroySemaphore(renderFinishedSemaphore)
 vulkan.VK_DestroySemaphore(imageAvailableSemaphore)
 vulkan.VK_DestroyCommandPool(commandPool)
 vulkan.VK_DestroyPipeline(pipeline)
 vulkan.VK_DestroyShaderModule(fragShader)
 vulkan.VK_DestroyShaderModule(vertShader)
-for _, framebuffer in ipairs(framebuffers) do
-    vulkan.VK_DestroyFramebuffer(framebuffer)
+for i, fb in ipairs(framebuffers) do
+    vulkan.VK_DestroyFramebuffer(fb)
 end
 vulkan.VK_DestroyRenderPass(renderPass)
 vulkan.VK_DestroySwapchainKHR(swapchain)
@@ -392,3 +524,4 @@ vulkan.VK_DestroyDevice(device)
 vulkan.VK_DestroySurfaceKHR(surface)
 vulkan.VK_DestroyInstance(instance)
 sdl3.SDL_Quit()
+print("Cleanup complete")

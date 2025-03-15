@@ -93,9 +93,11 @@ int luaopen_sdl3(lua_State *L) {
 
     lua_pushinteger(L, SDL_INIT_VIDEO);
     lua_setfield(L, -2, "INIT_VIDEO");
-    lua_pushinteger(L, SDL_EVENT_QUIT);
-    lua_setfield(L, -2, "EVENT_QUIT");
+    // lua_pushinteger(L, SDL_EVENT_QUIT);
+    // lua_setfield(L, -2, "EVENT_QUIT");
     lua_pushinteger(L, SDL_WINDOW_VULKAN);
     lua_setfield(L, -2, "WINDOW_VULKAN");
+    lua_pushinteger(L, SDL_EVENT_QUIT);  // Add SDL_EVENT_QUIT (256)
+    lua_setfield(L, -2, "SDL_EVENT_QUIT");
     return 1;
 }
