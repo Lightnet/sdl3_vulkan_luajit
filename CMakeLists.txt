@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(LuaJIT_SDL3_HelloWorld C)
+project(LuaJIT_SDL3_Vulkan C)
 
 include(FetchContent)
 
@@ -40,14 +40,26 @@ FetchContent_MakeAvailable(sdl3)
 set(SDL_SHARED ON CACHE BOOL "Build SDL as a shared library" FORCE)
 set(SDL_STATIC OFF CACHE BOOL "Build SDL as a static library" FORCE)
 
+# Fetch Vulkan-Headers
+FetchContent_Declare(
+    vulkan_headers
+    GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Headers.git
+    GIT_TAG vulkan-sdk-1.4.304.1
+)
+FetchContent_MakeAvailable(vulkan_headers)
+
+# Find Vulkan (requires Vulkan SDK installed)
+find_package(Vulkan REQUIRED)
+
 # Add executable
-add_executable(hello_world src/main.c src/sdl3_luajit.c)
+add_executable(hello_world src/main.c src/sdl3_luajit.c src/vulkan_luajit.c)
 target_include_directories(hello_world PRIVATE 
     ${sdl3_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${LUAJIT_BUILD_DIR}
+    ${vulkan_headers_SOURCE_DIR}/include
 )
-target_link_libraries(hello_world PRIVATE luajit_lib SDL3::SDL3)
+target_link_libraries(hello_world PRIVATE luajit_lib SDL3::SDL3 Vulkan::Vulkan)
 
 # Copy DLLs and main.lua
 add_custom_command(TARGET hello_world POST_BUILD

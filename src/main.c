@@ -4,6 +4,7 @@
 #include <lualib.h>
 #include <lauxlib.h>
 #include "sdl3_luajit.h"
+#include "vulkan_luajit.h"
 
 int main(int argc, char *argv[]) {
     const char *script_path = "main.lua";
@@ -25,20 +26,22 @@ int main(int argc, char *argv[]) {
 
     luaL_openlibs(L);
 
+    // Register sdl3 module
     lua_getglobal(L, "package");
     lua_getfield(L, -1, "preload");
     lua_pushcfunction(L, luaopen_sdl3);
     lua_setfield(L, -2, "sdl3");
-    lua_pop(L, 2);
+    lua_pushcfunction(L, luaopen_vulkan);
+    lua_setfield(L, -2, "vulkan");
+    lua_pop(L, 2);  // Pop preload and package
 
-    // Load the script
+    // Load and run script with args
     if (luaL_loadfile(L, script_path) != LUA_OK) {
         fprintf(stderr, "Error loading script '%s': %s\n", script_path, lua_tostring(L, -1));
         lua_close(L);
         return 1;
     }
 
-    // Push command-line arguments as variadic args to the script
     int nargs = 0;
     if (argc > 1) {
         for (int i = 1; i < argc; i++) {
@@ -47,7 +50,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Run the script with arguments
     if (lua_pcall(L, nargs, 0, 0) != LUA_OK) {
         fprintf(stderr, "Error running script '%s': %s\n", script_path, lua_tostring(L, -1));
         lua_close(L);

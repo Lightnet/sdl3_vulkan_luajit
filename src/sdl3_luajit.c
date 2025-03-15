@@ -25,7 +25,7 @@ static int l_sdl3_SDL_CreateWindow(lua_State *L) {
     int h = (int)luaL_checkinteger(L, 3);
     Uint32 flags = (Uint32)luaL_checkinteger(L, 4);
 
-    SDL_Window *window = SDL_CreateWindow(title, w, h, flags);
+    SDL_Window *window = SDL_CreateWindow(title, w, h, flags | SDL_WINDOW_VULKAN);  // Add SDL_WINDOW_VULKAN
     if (!window) {
         const char *err = SDL_GetError();
         lua_pushnil(L);
@@ -51,14 +51,13 @@ static int l_sdl3_SDL_Quit(lua_State *L) {
     return 0;
 }
 
-// New: sdl3.SDL_PollEvent() -> event_type or nil
 static int l_sdl3_SDL_PollEvent(lua_State *L) {
     SDL_Event event;
     if (SDL_PollEvent(&event)) {
-        lua_pushinteger(L, event.type);  // Return event type (e.g., SDL_EVENT_QUIT)
+        lua_pushinteger(L, event.type);
         return 1;
     }
-    lua_pushnil(L);  // No event available
+    lua_pushnil(L);
     return 1;
 }
 
@@ -92,10 +91,11 @@ int luaopen_sdl3(lua_State *L) {
 
     luaL_newlib(L, sdl3_funcs);
 
-    // Constants
     lua_pushinteger(L, SDL_INIT_VIDEO);
     lua_setfield(L, -2, "INIT_VIDEO");
     lua_pushinteger(L, SDL_EVENT_QUIT);
     lua_setfield(L, -2, "EVENT_QUIT");
+    lua_pushinteger(L, SDL_WINDOW_VULKAN);
+    lua_setfield(L, -2, "WINDOW_VULKAN");
     return 1;
 }
