@@ -14,6 +14,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo Running the application...
+set VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation
 hello_world.exe
 if %ERRORLEVEL% NEQ 0 (
     echo Application failed to run

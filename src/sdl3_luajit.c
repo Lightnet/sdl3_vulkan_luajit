@@ -101,6 +101,17 @@ static int l_SDL_GetTicks(lua_State *L) {
   return 1;
 }
 
+static int l_sdl3_SDL_DestroyWindow(lua_State *L) {
+  SDL3Window *wptr = (SDL3Window *)luaL_checkudata(L, 1, "SDL3Window");
+  printf("l_sdl3_SDL_DestroyWindow: window=%p\n", (void*)wptr->window);
+  if (wptr->window) {
+      SDL_DestroyWindow(wptr->window);
+      wptr->window = NULL;
+      printf("l_sdl3_SDL_DestroyWindow: Window destroyed\n");
+  }
+  return 0;
+}
+
 static const luaL_Reg sdl3_funcs[] = {
     {"SDL_GetTicks", l_SDL_GetTicks},
     {"SDL_Init", l_sdl3_SDL_Init},
@@ -110,6 +121,7 @@ static const luaL_Reg sdl3_funcs[] = {
     {"SDL_PollEvent", l_sdl3_SDL_PollEvent},
     {"SDL_GetEventType", l_sdl3_SDL_GetEventType},
     {"SDL_GetKeyFromEvent", l_sdl3_SDL_GetKeyFromEvent},
+    {"SDL_DestroyWindow", l_sdl3_SDL_DestroyWindow},
     {NULL, NULL}
 };
 
