@@ -84,28 +84,10 @@ This project uses CMake and NMake (from VS2022) for building. Follow these steps
 3. Install Vulkan SDK 1.4.304.1:
     
     - Download from [LunarG](https://vulkan.lunarg.com/sdk/home) and install to C:\VulkanSDK\1.4.304.1 (default path assumed).
-        
-4. Build LuaJIT:
-    
-    - Clone [LuaJIT](https://github.com/LuaJIT/LuaJIT) (git clone https://github.com/LuaJIT/LuaJIT.git).
-        
-    - In the LuaJIT directory, open Developer PowerShell for VS 2022:
-        
-        cmd
-        ```text
-        cd src
-        msvcbuild.bat
-        ```
-        
-    - Copy luajit.exe and lua51.dll to a directory in your PATH or note their location.
-        
-5. Build SDL3:
-    
-    - Clone [SDL3](https://github.com/libsdl-org/SDL) (git clone https://github.com/libsdl-org/SDL.git).
-    - Follow SDL3’s build instructions for Windows with CMake, then note the install path.
-        
-
+  
 ## Build Steps
+ * Use build.bat if on windows other is refs.
+ * Not work on other OS.
 
 1. Clone the Repository:
     
@@ -114,36 +96,13 @@ This project uses CMake and NMake (from VS2022) for building. Follow these steps
     git clone https://github.com/yourusername/sdl3_vulkan_luajit.git
     cd sdl3_vulkan_luajit
     ```
-# Notes:
- * Use build.bat if on windows other is refs.
- * Not work on other OS.
 
+2. Build the Project:
+    If using the windows. Current project folder there is build.bat.
 
-2. Configure CMake:
-    
-    - Open Developer PowerShell for VS 2022.
-    - Create and enter the build directory:
-        
-        cmd
-        ```text
-        mkdir build
-        cd build
-        ```
-        
-    - Run CMake, specifying paths to SDL3, LuaJIT, and Vulkan if not in default locations:
-        
-        cmd
-        ```text
-        cmake .. -DSDL3_DIR="path/to/SDL3" -DLUAJIT_DIR="path/to/LuaJIT" -DVulkan_DIR="C:\VulkanSDK\1.4.304.1"
-        ```
-        
-        Replace paths as needed.
-        
-3. Build the Project:
-    
     cmd
     ```text
-    cmake --build . --config Release
+    ./build.bat
     ```
     
     - This compiles the shaders (triangle.vert and triangle.frag) to SPIR-V and builds hello_world.exe.
@@ -152,12 +111,10 @@ This project uses CMake and NMake (from VS2022) for building. Follow these steps
     
     cmd
     ```text
-    hello_world.exe
+    ./run.bat
     ```
     
     - You should see a window with a colored triangle!
-        
-
 ---
 
 Expected Output
@@ -190,6 +147,7 @@ Image available semaphore created
 Render finished semaphore created
 No arguments provided
 Hello from main.lua! Vulkan API: 4210688
+//... logs render checks...
 ```
 
 A window opens showing a triangle with red, green, and blue vertices on a black background. Close the window to exit.
@@ -214,7 +172,6 @@ The triangle’s vertex data is hard-coded in triangle.vert, with colors passed 
 - CMake Errors: Verify paths to SDL3, LuaJIT, and Vulkan SDK in the cmake command.
 - Crash: Check for Vulkan validation layer errors (enable with Vulkan SDK’s VK_LAYER_KHRONOS_validation).
     
-
 ---
 
 ## Inspiration & References
