@@ -3,7 +3,7 @@
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
-#include "sdl3_luajit.h"
+#include "sdl_luajit.h"
 #include "vulkan_luajit.h"
 
 int main(int argc, char *argv[]) {
@@ -29,7 +29,7 @@ int main(int argc, char *argv[]) {
     // Register sdl3 module
     lua_getglobal(L, "package");
     lua_getfield(L, -1, "preload");
-    lua_pushcfunction(L, luaopen_sdl3);
+    lua_pushcfunction(L, luaopen_SDL);
     lua_setfield(L, -2, "SDL");
     lua_pushcfunction(L, luaopen_vulkan);
     lua_setfield(L, -2, "vulkan");

@@ -1,230 +1,211 @@
-local SDL = require("SDL")
-local vulkan = require("vulkan")
+local sdl = require("SDL")
+local vk = require("vulkan")
 
--- Initialize SDL
-if not SDL.SDL_Init(SDL.SDL_INIT_VIDEO) then
-    error("Failed to initialize SDL: " .. SDL.SDL_GetError())
+-- SDL setup
+print("SDL_Init")
+sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+print("SDL_CreateWindow")
+local window = assert(sdl.SDL_CreateWindow("Vulkan Triangle", 800, 600, sdl.SDL_WINDOW_VULKAN))
+
+-- Vulkan instance extensions
+print("SDL_Vulkan_GetInstanceExtensions")
+local extCount = ffi.new("unsigned int[1]")
+assert(sdl.SDL_Vulkan_GetInstanceExtensions(window, extCount, nil) == sdl.SDL_TRUE, "Failed to get extension count")
+local extensions = ffi.new("const char*[?]", extCount[0])
+assert(sdl.SDL_Vulkan_GetInstanceExtensions(window, extCount, extensions) == sdl.SDL_TRUE, "Failed to get extensions")
+print("Number of extensions:", extCount[0])
+local extTable = {}
+for i = 0, extCount[0] - 1 do
+    extTable[i + 1] = ffi.string(extensions[i])
+    print("Required extension " .. (i + 1) .. ":", extTable[i + 1])
 end
 
-local window = SDL.SDL_CreateWindow("Vulkan Triangle", 800, 600, SDL.SDL_WINDOW_VULKAN)
-if not window then
-    error("Failed to create window: " .. SDL.SDL_GetError())
-end
+-- Create Vulkan instance
+print("vulkan.create_instance")
+local instance = assert(vk.vk_CreateInstance({
+    enabled_extension_names = extTable,
+    application_info = {
+        application_name = "Vulkan Triangle",
+        application_version = vk.make_version(1, 0, 0),
+        engine_name = "LuaJIT Vulkan",
+        engine_version = vk.make_version(1, 0, 0),
+        api_version = vk.VK_API_VERSION_1_0
+    }
+}))
 
--- Vulkan setup
-local instance = vulkan.VK_CreateInstanceHelper(window, "Vulkan App", "LuaJIT Engine")
-local surface = vulkan.SDL_Vulkan_CreateSurface(window, instance)
-local physicalDevices = vulkan.VK_EnumeratePhysicalDevices(instance)
+-- Create surface
+print("SDL_Vulkan_CreateSurface")
+local surfacePtr = ffi.new("VkSurfaceKHR[1]")
+assert(sdl.SDL_Vulkan_CreateSurface(window, instance, surfacePtr) == sdl.SDL_TRUE, "Failed to create Vulkan surface")
+local surface = surfacePtr[0]
+
+-- Enumerate physical devices
+local physicalDevices = assert(vk.vk_EnumeratePhysicalDevices(instance))
 local physicalDevice = physicalDevices[1]
-local queueFamilyProperties = vulkan.VK_GetPhysicalDeviceQueueFamilyProperties(physicalDevice)
-local queueFamilyIndex
-for i, family in ipairs(queueFamilyProperties) do
-    if bit.band(family.queueFlags, vulkan.VK_QUEUE_GRAPHICS_BIT) ~= 0 then
-        queueFamilyIndex = i - 1
-        break
-    end
+local props = vk.vk_GetPhysicalDeviceProperties(physicalDevice)
+print("Using device:", props.deviceName)
+
+-- Queue family setup
+local queueFamilies = vk.vk_GetPhysicalDeviceQueueFamilyProperties(physicalDevice)
+print("Queue families available:", #queueFamilies)
+for i, family in ipairs(queueFamilies) do
+    local presentSupport = vk.vk_GetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i - 1, surface)
+    print(string.format("Queue Family %d: %d queues, flags: 0x%x", i, family.queueCount, family.queueFlags))
+    print("  Supports presenting:", presentSupport)
 end
 
-local device = vulkan.VK_CreateDevice(physicalDevice, queueFamilyIndex)
-local queue = vulkan.VK_GetDeviceQueue(device, queueFamilyIndex, 0)
-local swapchain, width, height = vulkan.VK_CreateSwapchainKHR(device, surface, window, physicalDevice)
-local extent = {width = width, height = height}
-local swapchainImages = vulkan.VK_GetSwapchainImagesKHR(device, swapchain)
-print("Swapchain image type: " .. type(swapchainImages[1])); io.flush()
-local renderPass = vulkan.VK_CreateRenderPass(device)
-local framebuffers = {}
+-- Create device
+local device, graphicsFamily, presentFamily = assert(vk.vk_CreateDevice(physicalDevice, surface, {
+    enabled_extension_names = { "VK_KHR_swapchain" }
+}))
+print("vulkan.vk_CreateDevice")
+print("Graphics queue family:", graphicsFamily)
+print("Present queue family:", presentFamily)
+
+-- Get queues
+print("vulkan.vk_GetDeviceQueue (graphics)")
+local graphicsQueue = vk.vk_GetDeviceQueue(device, graphicsFamily, 0)
+print("vulkan.vk_GetDeviceQueue (present)")
+local presentQueue = vk.vk_GetDeviceQueue(device, presentFamily, 0)
+
+-- Surface capabilities
+print("vulkan.vk_GetPhysicalDeviceSurfaceCapabilitiesKHR")
+local caps = vk.vk_GetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface)
+print("Min image count:", caps.minImageCount, "Max image count:", caps.maxImageCount)
+print("Current extent:", caps.currentWidth .. "x" .. caps.currentHeight)
+
+-- Surface formats
+print("vulkan.vk_GetPhysicalDeviceSurfaceFormatsKHR")
+local formats = vk.vk_GetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface)
+for i, fmt in ipairs(formats) do
+    print(string.format("Format %d: format=%d, colorSpace=%d", i, fmt.format, fmt.colorSpace))
+end
+
+-- Present modes
+print("vulkan.vk_GetPhysicalDeviceSurfacePresentModesKHR")
+local presentModes = vk.vk_GetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface)
+for i, mode in ipairs(presentModes) do
+    print("Present mode " .. i .. ":", mode)
+end
+
+-- Create swapchain
+print("vulkan.vk_CreateSwapchainKHR")
+local swapchain = assert(vk.vk_CreateSwapchainKHR(device, {
+    surface = surface,
+    minImageCount = 2,
+    imageFormat = vk.VK_FORMAT_B8G8R8A8_UNORM,
+    imageColorSpace = vk.VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+    imageExtentWidth = 800,
+    imageExtentHeight = 600,
+    queueFamilyIndices = { graphicsFamily },
+    presentMode = vk.VK_PRESENT_MODE_FIFO_KHR
+}))
+print("Swapchain created successfully")
+
+-- Get swapchain images
+print("vulkan.vk_GetSwapchainImagesKHR")
+local swapchainImages = assert(vk.vk_GetSwapchainImagesKHR(device, swapchain))
+print("Number of swapchain images:", #swapchainImages)
+
+-- Create image views
+print("vulkan.vk_CreateImageView")
+local imageViews = {}
 for i, image in ipairs(swapchainImages) do
-    framebuffers[i] = vulkan.VK_CreateFramebuffer(device, renderPass, image, extent)
+    imageViews[i] = assert(vk.vk_CreateImageView(device, {
+        image = image,
+        format = vk.VK_FORMAT_B8G8R8A8_UNORM
+    }))
 end
+print("Created " .. #imageViews .. " image views")
 
-local vertShader = assert(vulkan.VK_CreateShaderModule(device, "triangle.vert.spv"))
-local fragShader = assert(vulkan.VK_CreateShaderModule(device, "triangle.frag.spv"))
-local pipeline, descriptorSetLayout = vulkan.VK_CreateGraphicsPipelines(device, vertShader, fragShader, renderPass, extent)
-local commandPool = vulkan.VK_CreateCommandPool(device, queueFamilyIndex)
-local commandBuffers = vulkan.VK_AllocateCommandBuffers(device, commandPool, #swapchainImages)
-print("Number of swapchain images: " .. #swapchainImages); io.flush()
-print("Number of command buffers: " .. #commandBuffers); io.flush()
-for i, cb in ipairs(commandBuffers) do
-    print("Command buffer " .. i .. ": " .. tostring(cb)); io.flush()
+-- Create render pass
+print("vulkan.vk_CreateRenderPass")
+local renderPass = assert(vk.vk_CreateRenderPass(device, {
+    format = vk.VK_FORMAT_B8G8R8A8_UNORM
+}))
+print("Render pass created successfully")
+
+-- Create framebuffers
+print("vulkan.vk_CreateFramebuffer")
+local framebuffers = {}
+for i, view in ipairs(imageViews) do
+    framebuffers[i] = assert(vk.vk_CreateFramebuffer(device, {
+        renderPass = renderPass,
+        attachments = { view },
+        width = 800,
+        height = 600
+    }))
 end
+print("Created " .. #framebuffers .. " framebuffers")
 
-print("Descriptor pool flags: " .. tostring(vulkan.VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT))
-local descriptorPool = vulkan.VK_CreateDescriptorPool(device, {
-    flags = vulkan.VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-    maxSets = 1,
-    poolSizes = {{type = vulkan.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, descriptorCount = 1}}
-})
-local uniformBuffer = assert(vulkan.VK_CreateBuffer(device, 8))
-local position = {x = 0.0, y = 0.0}
-vulkan.VK_UpdateBuffer(uniformBuffer, position)
-local descriptorSet = vulkan.VK_AllocateDescriptorSet(device, descriptorPool, descriptorSetLayout)
-vulkan.VK_UpdateDescriptorSet(device, descriptorSet, uniformBuffer, 0, 8)
+-- Load shaders
+print("Loading shaders")
+local function readFile(path)
+    local file = io.open(path, "rb")
+    assert(file, "Failed to open " .. path)
+    local data = file:read("*all")
+    file:close()
+    return data
+end
+local vertShaderCode = readFile("triangle.vert.spv")
+local fragShaderCode = readFile("triangle.frag.spv")
 
-local imageAvailableSemaphore = vulkan.VK_CreateSemaphore(device)
-local renderFinishedSemaphore = vulkan.VK_CreateSemaphore(device)
-local fence = vulkan.VK_CreateFence(device)
+-- Create shader modules
+print("vulkan.vk_CreateShaderModule (vertex)")
+local vertShaderModule = assert(vk.vk_CreateShaderModule(device, vertShaderCode))
+print("vulkan.vk_CreateShaderModule (fragment)")
+local fragShaderModule = assert(vk.vk_CreateShaderModule(device, fragShaderCode))
 
--- Main loop
+-- Create pipeline layout
+print("vulkan.vk_CreatePipelineLayout")
+local pipelineLayout = assert(vk.vk_CreatePipelineLayout(device))
+
+-- Create graphics pipeline
+print("vulkan.vk_CreateGraphicsPipelines")
+local pipeline = assert(vk.vk_CreateGraphicsPipelines(device, {
+    vertexShader = vertShaderModule,
+    fragmentShader = fragShaderModule,
+    pipelineLayout = pipelineLayout,
+    renderPass = renderPass
+}))
+
+-- Create command pool and buffers (simplified, needs proper implementation)
+print("Creating command pool and buffers")
+-- These need to be exposed via vulkan_luajit.c:
+-- vkCreateCommandPool, vkAllocateCommandBuffers, vkBeginCommandBuffer, vkCmdBeginRenderPass, etc.
+-- For now, assume they're added (we'll update vulkan_luajit.c next)
+
+-- Semaphores and fences
+print("vulkan.vk_CreateSemaphore")
+local imageAvailableSemaphore = assert(vk.vk_CreateSemaphore(device))
+local renderFinishedSemaphore = assert(vk.vk_CreateSemaphore(device))
+print("vulkan.vk_CreateFence")
+local inFlightFence = assert(vk.vk_CreateFence(device, true))
+
+-- Render loop
+print("Entering render loop")
 local running = true
-local startTime = SDL.SDL_GetTicks()
-local frameCount = 0
-local firstFrame = true
-
-print("SDL.SDL_EVENT_QUIT: " .. SDL.SDL_EVENT_QUIT)
-print("SDL module:", SDL)
-for k, v in pairs(SDL) do
-    print("SDL." .. k, v)
-end
-print("END SDL module:")
-
-
-
--- Main loop
-local running = true
-local startTime = SDL.SDL_GetTicks()
-local frameCount = 0
-local firstFrame = true
-
 while running do
-    local event = SDL.SDL_PollEvent()
-    while event do
-        local event_type = SDL.SDL_GetEventType(event)
-        if event_type == SDL.SDL_EVENT_QUIT then
+    local event = ffi.new("SDL_Event")
+    while sdl.SDL_PollEvent(event) ~= 0 do
+        if event.type == sdl.SDL_QUIT then
             running = false
-            break
-        elseif event_type == SDL.SDL_EVENT_KEY_DOWN then
-            local key = SDL.SDL_GetKeyFromEvent(event)
-            if key == SDL.SDLK_LEFT then
-                position.x = position.x - 0.05
-                vulkan.VK_UpdateBuffer(uniformBuffer, position)
-            elseif key == SDL.SDLK_RIGHT then
-                position.x = position.x + 0.05
-                vulkan.VK_UpdateBuffer(uniformBuffer, position)
-            elseif key == SDL.SDLK_UP then
-                position.y = position.y - 0.05
-                vulkan.VK_UpdateBuffer(uniformBuffer, position)
-            elseif key == SDL.SDLK_DOWN then
-                position.y = position.y + 0.05
-                vulkan.VK_UpdateBuffer(uniformBuffer, position)
-            end
         end
-        event = SDL.SDL_PollEvent()
     end
 
-    vulkan.VK_WaitForFences(device, fence, 1000000000)
-    vulkan.VK_ResetFences(device, fence)
-    local imageIndex, recreateSwapchain = vulkan.VK_AcquireNextImageKHR(device, swapchain, imageAvailableSemaphore, 1000000000)
-    if recreateSwapchain then
-        print("Swapchain recreation needed")
-        swapchain, width, height = vulkan.VK_CreateSwapchainKHR(device, surface, window, physicalDevice)
-        extent = {width = width, height = height}
-        swapchainImages = vulkan.VK_GetSwapchainImagesKHR(device, swapchain)
-        for i, fb in ipairs(framebuffers) do
-            vulkan.VK_DestroyFramebuffer(device, fb)
-        end
-        framebuffers = {}
-        for i, image in ipairs(swapchainImages) do
-            framebuffers[i] = vulkan.VK_CreateFramebuffer(device, renderPass, image, extent)
-        end
-        commandBuffers = vulkan.VK_AllocateCommandBuffers(device, commandPool, #swapchainImages)
-        imageIndex = 0
-        firstFrame = true -- Reset for new swapchain
-    end
-
-    if imageIndex and imageIndex >= 0 and imageIndex < #swapchainImages then
-        local cmd = commandBuffers[imageIndex + 1]
-        if cmd then
-            assert(vulkan.VK_BeginCommandBuffer(cmd))
-            print("Frame " .. frameCount .. ": Begin command buffer for imageIndex " .. imageIndex); io.flush()
-
-            -- First barrier: Transition from PRESENT_SRC_KHR (or UNDEFINED for first frame) to COLOR_ATTACHMENT_OPTIMAL
-            vulkan.VK_CmdPipelineBarrier(cmd,
-                vulkan.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                vulkan.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                0, {}, {}, {
-                    {
-                        srcAccessMask = firstFrame and 0 or vulkan.VK_ACCESS_MEMORY_READ_BIT, -- Presentation read access
-                        dstAccessMask = vulkan.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                        oldLayout = firstFrame and vulkan.VK_IMAGE_LAYOUT_UNDEFINED or vulkan.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                        newLayout = vulkan.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                        image = swapchainImages[imageIndex + 1],
-                        subresourceRange = {aspectMask = vulkan.VK_IMAGE_ASPECT_COLOR_BIT, baseMipLevel = 0, levelCount = 1, baseArrayLayer = 0, layerCount = 1}
-                    }
-                })
-            print("Frame " .. frameCount .. ": First barrier to COLOR_ATTACHMENT_OPTIMAL"); io.flush()
-
-            -- Render pass (assumes finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
-            local clearValues = {{r = 0.0, g = 0.0, b = 0.0, a = 1.0}}
-            vulkan.VK_CmdBeginRenderPass(cmd, renderPass, framebuffers[imageIndex + 1], extent, clearValues)
-            vulkan.VK_CmdBindPipeline(cmd, pipeline)
-            vulkan.VK_CmdBindDescriptorSet(cmd, pipeline, descriptorSet, 0)
-            vulkan.VK_CmdDraw(cmd, 3, 1, 0, 0)
-            vulkan.VK_CmdEndRenderPass(cmd)
-            print("Frame " .. frameCount .. ": Render pass complete"); io.flush()
-
-            -- No second barrier needed if render pass transitions to PRESENT_SRC_KHR
-
-            assert(vulkan.VK_EndCommandBuffer(cmd))
-            assert(vulkan.VK_QueueSubmit(queue, cmd, imageAvailableSemaphore, renderFinishedSemaphore, fence))
-            assert(vulkan.VK_QueuePresentKHR(queue, swapchain, imageIndex, renderFinishedSemaphore))
-            firstFrame = false
-        else
-            print("Error: Command buffer is nil for imageIndex " .. imageIndex)
-        end
-    else
-        print("Error: Invalid or nil imageIndex: " .. tostring(imageIndex))
-    end
-
-    frameCount = frameCount + 1
-    local currentTime = SDL.SDL_GetTicks()
-    if currentTime - startTime >= 1000 then
-        print("FPS: " .. frameCount); io.flush()
-        frameCount = 0
-        startTime = currentTime
-    end
+    -- Acquire image, submit command buffer, present (needs command buffer setup)
+    local imageIndex = assert(vk.vk_AcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphore, nil))
+    assert(vk.vk_QueueSubmit(graphicsQueue, {{
+        waitSemaphores = { imageAvailableSemaphore },
+        signalSemaphores = { renderFinishedSemaphore },
+        commandBuffers = { --[[ command buffer here ]] }
+    }}, inFlightFence))
+    assert(vk.vk_QueuePresentKHR(presentQueue, {
+        waitSemaphores = { renderFinishedSemaphore },
+        swapchains = { { swapchain = swapchain, imageIndex = imageIndex } }
+    }))
 end
 
-
-
-
-if not success then
-    print("Main loop error: " .. tostring(err))
-end
-
-local function cleanup()
-    print("Starting cleanup...")
-    local function safe_call(func, desc, ...)
-        local args = {...}
-        local success, err = pcall(func, unpack(args))
-        if not success then
-            print("Cleanup error in " .. desc .. ": " .. tostring(err))
-        end
-    end
-
-    safe_call(vulkan.VK_QueueWaitIdle, "queue wait idle", queue)
-    safe_call(vulkan.VK_DestroyFence, "destroy fence", device, fence)
-    safe_call(vulkan.VK_DestroySemaphore, "destroy render finished semaphore", device, renderFinishedSemaphore)
-    safe_call(vulkan.VK_DestroySemaphore, "destroy image available semaphore", device, imageAvailableSemaphore)
-    safe_call(vulkan.VK_DestroyBuffer, "destroy uniform buffer", device, uniformBuffer)
-    safe_call(vulkan.VK_FreeCommandBuffers, "free command buffers", device, commandPool, commandBuffers)
-    safe_call(vulkan.VK_DestroyCommandPool, "destroy command pool", device, commandPool)
-    safe_call(vulkan.VK_FreeDescriptorSets, "free descriptor set", device, descriptorPool, descriptorSet)
-    safe_call(vulkan.VK_DestroyDescriptorPool, "destroy descriptor pool", device, descriptorPool)
-    for i, fb in ipairs(framebuffers) do
-        safe_call(vulkan.VK_DestroyFramebuffer, "destroy framebuffer " .. i, device, fb)
-    end
-    safe_call(vulkan.VK_DestroyRenderPass, "destroy render pass", device, renderPass)
-    safe_call(vulkan.VK_DestroySwapchainKHR, "destroy swapchain", device, swapchain)
-    safe_call(vulkan.VK_DestroyPipeline, "destroy pipeline", device, pipeline)
-    safe_call(vulkan.VK_DestroyShaderModule, "destroy frag shader", device, fragShader)
-    safe_call(vulkan.VK_DestroyShaderModule, "destroy vert shader", device, vertShader)
-    safe_call(vulkan.VK_DestroyDescriptorSetLayout, "destroy descriptor set layout", device, descriptorSetLayout)
-    safe_call(vulkan.VK_DestroyDevice, "destroy device", device)
-    safe_call(vulkan.VK_DestroySurfaceKHR, "destroy surface", surface, instance)
-    safe_call(vulkan.VK_DestroyInstance, "destroy instance", instance)
-    safe_call(SDL.SDL_DestroyWindow, "destroy window", window)
-    safe_call(SDL.SDL_Quit, "quit SDL")
-end
-
-cleanup()
-print("Done.")
+-- Cleanup
+sdl.SDL_DestroyWindow(window)
+sdl.SDL_Quit()
