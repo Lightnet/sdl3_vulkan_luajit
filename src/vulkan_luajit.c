@@ -3,6 +3,7 @@
 #include "lualib.h"
 #include <stdio.h>
 
+// # instance
 typedef struct {
     VkInstance instance;
 } VulkanInstance;
@@ -205,16 +206,6 @@ static int l_vulkan_VK_CreateInstanceHelper(lua_State *L) {
         .engineVersion = VK_MAKE_VERSION(1, 0, 0),
         .apiVersion = VK_API_VERSION_1_4
     };
-
-    
-    // VkInstanceCreateInfo createInfo = {
-    //     .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-    //     .pApplicationInfo = &appInfo,
-    //     .enabledExtensionCount = extensionCount,
-    //     .ppEnabledExtensionNames = extensionNames,
-    //     .enabledLayerCount = 0,
-    //     .ppEnabledLayerNames = NULL
-    // };
 
     const char* validationLayerName = "VK_LAYER_KHRONOS_validation";
 
