@@ -1125,7 +1125,189 @@ static int l_vk_QueuePresentKHR(lua_State *L) {
   return 1;
 }
 
+static int l_vk_CreateCommandPool(lua_State *L) {
+  VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  uint32_t queueFamilyIndex = (uint32_t)luaL_checkinteger(L, 2);
 
+  VkCommandPoolCreateInfo createInfo = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .queueFamilyIndex = queueFamilyIndex,
+      .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
+  };
+
+  VkCommandPool commandPool;
+  VkResult result = vkCreateCommandPool(dptr->device, &createInfo, NULL, &commandPool);
+  if (result != VK_SUCCESS) {
+      char errMsg[64];
+      snprintf(errMsg, sizeof(errMsg), "vkCreateCommandPool failed with result %d", result);
+      lua_pushnil(L);
+      lua_pushstring(L, errMsg);
+      return 2;
+  }
+
+  VulkanCommandPool *cpptr = (VulkanCommandPool *)lua_newuserdata(L, sizeof(VulkanCommandPool));
+  cpptr->commandPool = commandPool;
+  cpptr->device = dptr->device;
+  luaL_getmetatable(L, "VulkanCommandPool");
+  lua_setmetatable(L, -2);
+  return 1;
+}
+
+static int l_vk_AllocateCommandBuffers(lua_State *L) {
+  VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanCommandPool *cpptr = (VulkanCommandPool *)luaL_checkudata(L, 2, "VulkanCommandPool");
+  uint32_t count = (uint32_t)luaL_checkinteger(L, 3);
+
+  VkCommandBufferAllocateInfo allocInfo = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .commandPool = cpptr->commandPool,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .commandBufferCount = count
+  };
+
+  VkCommandBuffer *commandBuffers = malloc(count * sizeof(VkCommandBuffer));
+  VkResult result = vkAllocateCommandBuffers(dptr->device, &allocInfo, commandBuffers);
+  if (result != VK_SUCCESS) {
+      free(commandBuffers);
+      char errMsg[64];
+      snprintf(errMsg, sizeof(errMsg), "vkAllocateCommandBuffers failed with result %d", result);
+      lua_pushnil(L);
+      lua_pushstring(L, errMsg);
+      return 2;
+  }
+
+  lua_newtable(L);
+  for (uint32_t i = 0; i < count; i++) {
+      lua_pushlightuserdata(L, commandBuffers[i]);
+      lua_rawseti(L, -2, i + 1);
+  }
+  free(commandBuffers); // Lua now owns references
+  return 1;
+}
+
+static int l_vk_BeginCommandBuffer(lua_State *L) {
+  VkCommandBuffer cmdBuffer = (VkCommandBuffer)lua_touserdata(L, 1);
+
+  VkCommandBufferBeginInfo beginInfo = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+      .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+  };
+
+  VkResult result = vkBeginCommandBuffer(cmdBuffer, &beginInfo);
+  if (result != VK_SUCCESS) {
+      char errMsg[64];
+      snprintf(errMsg, sizeof(errMsg), "vkBeginCommandBuffer failed with result %d", result);
+      lua_pushnil(L);
+      lua_pushstring(L, errMsg);
+      return 2;
+  }
+
+  lua_pushboolean(L, true);
+  return 1;
+}
+
+static int l_vk_CmdBeginRenderPass(lua_State *L) {
+  VkCommandBuffer cmdBuffer = (VkCommandBuffer)lua_touserdata(L, 1);
+  VulkanRenderPass *rpptr = (VulkanRenderPass *)luaL_checkudata(L, 2, "VulkanRenderPass");
+  VulkanFramebuffer *fbptr = (VulkanFramebuffer *)luaL_checkudata(L, 3, "VulkanFramebuffer");
+
+  VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+  VkRenderPassBeginInfo renderPassInfo = {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+      .renderPass = rpptr->renderPass,
+      .framebuffer = fbptr->framebuffer,
+      .renderArea = {{0, 0}, {800, 600}},
+      .clearValueCount = 1,
+      .pClearValues = &clearColor
+  };
+
+  vkCmdBeginRenderPass(cmdBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+  return 0;
+}
+
+static int l_vk_CmdBindPipeline(lua_State *L) {
+  VkCommandBuffer cmdBuffer = (VkCommandBuffer)lua_touserdata(L, 1);
+  VulkanPipeline *pptr = (VulkanPipeline *)luaL_checkudata(L, 2, "VulkanPipeline");
+
+  vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pptr->pipeline);
+  return 0;
+}
+
+static int l_vk_CmdDraw(lua_State *L) {
+  VkCommandBuffer cmdBuffer = (VkCommandBuffer)lua_touserdata(L, 1);
+  uint32_t vertexCount = (uint32_t)luaL_checkinteger(L, 2);
+  uint32_t instanceCount = (uint32_t)luaL_checkinteger(L, 3);
+  uint32_t firstVertex = (uint32_t)luaL_checkinteger(L, 4);
+  uint32_t firstInstance = (uint32_t)luaL_checkinteger(L, 5);
+
+  vkCmdDraw(cmdBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+  return 0;
+}
+
+static int l_vk_CmdEndRenderPass(lua_State *L) {
+  VkCommandBuffer cmdBuffer = (VkCommandBuffer)lua_touserdata(L, 1);
+  vkCmdEndRenderPass(cmdBuffer);
+  return 0;
+}
+
+static int l_vk_EndCommandBuffer(lua_State *L) {
+  VkCommandBuffer cmdBuffer = (VkCommandBuffer)lua_touserdata(L, 1);
+
+  VkResult result = vkEndCommandBuffer(cmdBuffer);
+  if (result != VK_SUCCESS) {
+      char errMsg[64];
+      snprintf(errMsg, sizeof(errMsg), "vkEndCommandBuffer failed with result %d", result);
+      lua_pushnil(L);
+      lua_pushstring(L, errMsg);
+      return 2;
+  }
+
+  lua_pushboolean(L, true);
+  return 1;
+}
+
+static int l_vk_WaitForFences(lua_State *L) {
+  VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanFence *fptr = (VulkanFence *)luaL_checkudata(L, 2, "VulkanFence");
+
+  VkResult result = vkWaitForFences(dptr->device, 1, &fptr->fence, VK_TRUE, UINT64_MAX);
+  if (result != VK_SUCCESS) {
+      char errMsg[64];
+      snprintf(errMsg, sizeof(errMsg), "vkWaitForFences failed with result %d", result);
+      lua_pushnil(L);
+      lua_pushstring(L, errMsg);
+      return 2;
+  }
+
+  lua_pushboolean(L, true);
+  return 1;
+}
+
+static int l_vk_ResetFences(lua_State *L) {
+  VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanFence *fptr = (VulkanFence *)luaL_checkudata(L, 2, "VulkanFence");
+
+  VkResult result = vkResetFences(dptr->device, 1, &fptr->fence);
+  if (result != VK_SUCCESS) {
+      char errMsg[64];
+      snprintf(errMsg, sizeof(errMsg), "vkResetFences failed with result %d", result);
+      lua_pushnil(L);
+      lua_pushstring(L, errMsg);
+      return 2;
+  }
+
+  lua_pushboolean(L, true);
+  return 1;
+}
+
+static int l_vk_commandpool_gc(lua_State *L) {
+  VulkanCommandPool *cpptr = (VulkanCommandPool *)luaL_checkudata(L, 1, "VulkanCommandPool");
+  if (cpptr->commandPool) {
+      vkDestroyCommandPool(cpptr->device, cpptr->commandPool, NULL);
+      cpptr->commandPool = VK_NULL_HANDLE;
+  }
+  return 0;
+}
 
 
 static int l_vk_swapchain_gc(lua_State *L) {
@@ -1337,6 +1519,16 @@ static const luaL_Reg vulkan_funcs[] = {
   {"vk_AcquireNextImageKHR", l_vk_AcquireNextImageKHR},
   {"vk_QueueSubmit", l_vk_QueueSubmit},
   {"vk_QueuePresentKHR", l_vk_QueuePresentKHR},
+  {"vk_CreateCommandPool", l_vk_CreateCommandPool},
+  {"vk_AllocateCommandBuffers", l_vk_AllocateCommandBuffers},
+  {"vk_BeginCommandBuffer", l_vk_BeginCommandBuffer},
+  {"vk_CmdBeginRenderPass", l_vk_CmdBeginRenderPass},
+  {"vk_CmdBindPipeline", l_vk_CmdBindPipeline},
+  {"vk_CmdDraw", l_vk_CmdDraw},
+  {"vk_CmdEndRenderPass", l_vk_CmdEndRenderPass},
+  {"vk_EndCommandBuffer", l_vk_EndCommandBuffer},
+  {"vk_WaitForFences", l_vk_WaitForFences},
+  {"vk_ResetFences", l_vk_ResetFences},
   {NULL, NULL}
 };
 
@@ -1395,6 +1587,10 @@ int luaopen_vulkan(lua_State *L) {
 
     luaL_newmetatable(L, "VulkanFence");
     luaL_setfuncs(L, fence_mt, 0);
+    lua_pop(L, 1);
+
+    luaL_newmetatable(L, "VulkanCommandPool");
+    luaL_setfuncs(L, (const luaL_Reg[]){{"__gc", l_vk_commandpool_gc}, {NULL, NULL}}, 0);
     lua_pop(L, 1);
 
     // Create the module table

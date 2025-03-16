@@ -76,6 +76,11 @@ typedef struct {
   VkDevice device;
 } VulkanFence;
 
+typedef struct {
+  VkCommandPool commandPool;
+  VkDevice device;
+} VulkanCommandPool;
+
 int luaopen_vulkan(lua_State *L);
 
 #endif

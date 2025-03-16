@@ -1,3 +1,4 @@
+-- TEST limit on AI model broke some degree.
 local SDL = require("SDL")
 local vulkan = require("vulkan")
 

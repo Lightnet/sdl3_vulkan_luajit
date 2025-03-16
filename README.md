@@ -3,18 +3,17 @@
 # License: MIT
 
 # Status:
- * current api wrapper does not work.
- * working from ground up for vulkan wrapper which not correct as it skip many steps.
+ * Reworking api wrapper for Vulkan 1.4.x and SDL 3.2.8. Build Test
  * Reason to relfect on C to Lua. Lua has different format which does not work on C code.
+ * Need to follow Lua format correct as well LuaJIT format.
 
 # Information:
 A lightweight prototype integrating SDL3, Vulkan, and LuaJIT to create a simple graphics application scripted in Lua. This project draws a colorful triangle on screen as a proof-of-concept, inspired by the simplicity of Raylib's Lua bindings, but built from scratch with Vulkan for rendering and SDL3 for windowing.
 
-
-
 ## Notes:
  * Needs work on readme doc.
- * Most be rework from Grok Beta 3. It was not detail but quick mark up.
+ * Most be rework from Grok Beta 3. 
+ * It was not detail but quick mark up.
 
 ---
 
@@ -52,7 +51,7 @@ sdl3_vulkan_luajit/
 - CMake: Automates building and shader compilation.
     
 
-The current demo creates a window and renders a triangle with red, green, and blue vertices on a black background.
+ - (Not working yet) The current demo creates a window and renders a triangle with red, green, and blue vertices on a black background. 
 
 ---
 
@@ -127,33 +126,63 @@ This project uses CMake and NMake (from VS2022) for building. Follow these steps
 Expected Output
 
 ```text
-Vulkan instance extensions:
-  1: VK_KHR_surface
-  2: VK_KHR_win32_surface
-Found 1 physical devices
-Queue families for device 1:
-  1: flags=15, count=16
-  2: flags=12, count=2
-  3: flags=14, count=8
-  4: flags=44, count=1
-  5: flags=76, count=1
-Selected graphics queue family: index=0
-Logical device created
-Swapchain created with extent: 800x600
-Graphics queue retrieved
-Swapchain images retrieved: 2
-Render pass created
-Framebuffers created: 2
-Vertex shader created
-Fragment shader created
-Graphics pipeline created
-Command pool created
-Command buffers allocated: 2
-Command buffers recorded
-Image available semaphore created
-Render finished semaphore created
-No arguments provided
-Hello from main.lua! Vulkan API: 4210688
+SDL_Init
+SDL_CreateWindow
+SDL_Vulkan_GetInstanceExtensions
+Number of extensions: 2
+Required extension 1: VK_KHR_surface      
+Required extension 2: VK_KHR_win32_surface
+vulkan.create_instance
+SDL_Vulkan_CreateSurface
+Using device: Graphic Card Name
+Queue families available: 5
+Queue Family 1: 16 queues, flags: 0xf
+  Supports presenting: true
+Queue Family 2: 2 queues, flags: 0xc
+  Supports presenting: false
+Queue Family 3: 8 queues, flags: 0xe
+  Supports presenting: true
+Queue Family 4: 1 queues, flags: 0x2c
+  Supports presenting: false
+Queue Family 5: 1 queues, flags: 0x4c
+  Supports presenting: false
+vulkan.vk_CreateDevice
+Graphics queue family: 0
+Present queue family: 0
+vulkan.vk_GetDeviceQueue (graphics)
+vulkan.vk_GetDeviceQueue (present)
+vulkan.vk_GetPhysicalDeviceSurfaceCapabilitiesKHR
+Min image count: 2, Max image count: 8
+Current extent: 800x600
+vulkan.vk_GetPhysicalDeviceSurfaceFormatsKHR
+Format 1: format=44, colorSpace=0
+Format 2: format=50, colorSpace=0
+Format 3: format=37, colorSpace=0
+Format 4: format=43, colorSpace=0
+Format 5: format=64, colorSpace=0
+vulkan.vk_GetPhysicalDeviceSurfacePresentModesKHR
+Present mode 1: 2
+Present mode 2: 3
+Present mode 3: 1
+Present mode 4: 0
+vulkan.vk_CreateSwapchainKHR
+Swapchain created successfully
+vulkan.vk_GetSwapchainImagesKHR
+Number of swapchain images: 2
+vulkan.vk_CreateImageView
+Created 2 image views
+vulkan.vk_CreateRenderPass
+Render pass created successfully
+vulkan.vk_CreateFramebuffer
+Created 2 framebuffers
+Loading shaders
+vulkan.vk_CreateShaderModule (vertex)
+vulkan.vk_CreateShaderModule (fragment)
+vulkan.vk_CreatePipelineLayout
+Starting cleanup...
+l_sdl_SDL_DestroyWindow: window=000001DE4DD4F250
+l_sdl_SDL_DestroyWindow: Window destroyed
+Done.
 //... logs render checks...
 ```
 
