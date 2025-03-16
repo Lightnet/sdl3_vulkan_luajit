@@ -3,19 +3,6 @@
 #include "lualib.h"
 #include <stdio.h>
 
-// typedef struct {
-//     VkPhysicalDevice physicalDevice;
-// } VulkanPhysicalDevice;
-
-// typedef struct {
-//     VkDevice device;
-// } VulkanDevice;
-
-// typedef struct {
-//   VkQueue queue;
-// } VulkanQueue;
-
-
 static int l_vk_make_version(lua_State *L) {
   uint32_t major = (uint32_t)luaL_checkinteger(L, 1);
   uint32_t minor = (uint32_t)luaL_checkinteger(L, 2);
@@ -691,7 +678,6 @@ static int l_vk_CreateFramebuffer(lua_State *L) {
   return 1;
 }
 
-
 static int l_vk_CreateShaderModule(lua_State *L) {
   VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
   size_t codeSize;
@@ -720,6 +706,8 @@ static int l_vk_CreateShaderModule(lua_State *L) {
   lua_setmetatable(L, -2);
   return 1;
 }
+
+
 
 static int l_vk_CreatePipelineLayout(lua_State *L) {
   VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
@@ -1266,6 +1254,136 @@ static int l_vk_EndCommandBuffer(lua_State *L) {
   return 1;
 }
 
+// luaL_checkudata > lua_touserdata
+static int l_vk_ResetCommandBuffer(lua_State *L) {
+  VkCommandBuffer cmdBuffer = (VkCommandBuffer)lua_touserdata(L, 1);
+  if (!cmdBuffer) {
+      lua_pushnil(L);
+      lua_pushstring(L, "vkResetCommandBuffer: invalid command buffer");
+      return 2;
+  }
+  VkResult result = vkResetCommandBuffer(cmdBuffer, 0); // 0 = no flags for now
+  if (result != VK_SUCCESS) {
+      char errMsg[64];
+      snprintf(errMsg, sizeof(errMsg), "vkResetCommandBuffer failed with result %d", result);
+      lua_pushnil(L);
+      lua_pushstring(L, errMsg);
+      return 2;
+  }
+  lua_pushboolean(L, true); // Return true on success
+  return 1;
+}
+
+
+static int l_vk_CmdPipelineBarrier(lua_State *L) {
+  VkCommandBuffer cmdBuffer = (VkCommandBuffer)lua_touserdata(L, 1);
+  if (!cmdBuffer) {
+      lua_pushnil(L);
+      lua_pushstring(L, "vkCmdPipelineBarrier: invalid command buffer");
+      return 2;
+  }
+
+  VkPipelineStageFlags srcStageMask = luaL_checkinteger(L, 2);
+  VkPipelineStageFlags dstStageMask = luaL_checkinteger(L, 3);
+  VkDependencyFlags dependencyFlags = luaL_checkinteger(L, 4);
+
+  uint32_t memoryBarrierCount = 0;
+  const VkMemoryBarrier *pMemoryBarriers = NULL;
+  if (!lua_isnil(L, 5)) {
+      luaL_error(L, "Memory barriers not yet supported");
+  }
+
+  uint32_t bufferMemoryBarrierCount = 0;
+  const VkBufferMemoryBarrier *pBufferMemoryBarriers = NULL;
+  if (!lua_isnil(L, 6)) {
+      luaL_error(L, "Buffer memory barriers not yet supported");
+  }
+
+  uint32_t imageMemoryBarrierCount = 0;
+  VkImageMemoryBarrier *pImageMemoryBarriers = NULL;
+  if (!lua_isnil(L, 7)) {
+      luaL_checktype(L, 7, LUA_TTABLE);
+      imageMemoryBarrierCount = lua_objlen(L, 7);
+      pImageMemoryBarriers = malloc(imageMemoryBarrierCount * sizeof(VkImageMemoryBarrier));
+      for (uint32_t i = 0; i < imageMemoryBarrierCount; i++) {
+          lua_rawgeti(L, 7, i + 1);
+          luaL_checktype(L, -1, LUA_TTABLE);
+
+          VkImageMemoryBarrier *barrier = &pImageMemoryBarriers[i];
+          barrier->sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+          barrier->pNext = NULL;
+
+          lua_getfield(L, -1, "oldLayout");
+          barrier->oldLayout = luaL_checkinteger(L, -1);
+          lua_pop(L, 1);
+
+          lua_getfield(L, -1, "newLayout");
+          barrier->newLayout = luaL_checkinteger(L, -1);
+          lua_pop(L, 1);
+
+          lua_getfield(L, -1, "srcQueueFamilyIndex");
+          barrier->srcQueueFamilyIndex = luaL_checkinteger(L, -1);
+          lua_pop(L, 1);
+
+          lua_getfield(L, -1, "dstQueueFamilyIndex");
+          barrier->dstQueueFamilyIndex = luaL_checkinteger(L, -1);
+          lua_pop(L, 1);
+
+          lua_getfield(L, -1, "image");
+          VulkanImage *imgptr = (VulkanImage *)luaL_checkudata(L, -1, "VulkanImage");
+          barrier->image = imgptr->image;
+          lua_pop(L, 1);
+
+          // Add srcAccessMask and dstAccessMask
+          lua_getfield(L, -1, "srcAccessMask");
+          barrier->srcAccessMask = luaL_optinteger(L, -1, 0); // Default to 0 if not specified
+          lua_pop(L, 1);
+
+          lua_getfield(L, -1, "dstAccessMask");
+          barrier->dstAccessMask = luaL_optinteger(L, -1, 0); // Default to 0 if not specified
+          lua_pop(L, 1);
+
+          lua_getfield(L, -1, "subresourceRange");
+          luaL_checktype(L, -1, LUA_TTABLE);
+          lua_getfield(L, -1, "aspectMask");
+          barrier->subresourceRange.aspectMask = luaL_checkinteger(L, -1);
+          lua_pop(L, 1);
+          lua_getfield(L, -1, "baseMipLevel");
+          barrier->subresourceRange.baseMipLevel = luaL_checkinteger(L, -1);
+          lua_pop(L, 1);
+          lua_getfield(L, -1, "levelCount");
+          barrier->subresourceRange.levelCount = luaL_checkinteger(L, -1);
+          lua_pop(L, 1);
+          lua_getfield(L, -1, "baseArrayLayer");
+          barrier->subresourceRange.baseArrayLayer = luaL_checkinteger(L, -1);
+          lua_pop(L, 1);
+          lua_getfield(L, -1, "layerCount");
+          barrier->subresourceRange.layerCount = luaL_checkinteger(L, -1);
+          lua_pop(L, 1);
+          lua_pop(L, 1); // Pop subresourceRange
+
+          lua_pop(L, 1); // Pop barrier table
+      }
+  }
+
+  vkCmdPipelineBarrier(
+      cmdBuffer,
+      srcStageMask,
+      dstStageMask,
+      dependencyFlags,
+      memoryBarrierCount, pMemoryBarriers,
+      bufferMemoryBarrierCount, pBufferMemoryBarriers,
+      imageMemoryBarrierCount, pImageMemoryBarriers
+  );
+
+  if (pImageMemoryBarriers) free(pImageMemoryBarriers);
+
+  return 0;
+}
+
+
+
+
 static int l_vk_WaitForFences(lua_State *L) {
   VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
   VulkanFence *fptr = (VulkanFence *)luaL_checkudata(L, 2, "VulkanFence");
@@ -1305,6 +1423,16 @@ static int l_vk_commandpool_gc(lua_State *L) {
   if (cpptr->commandPool) {
       vkDestroyCommandPool(cpptr->device, cpptr->commandPool, NULL);
       cpptr->commandPool = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+static int l_vk_DestroyFence(lua_State *L) {
+  VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanFence *fptr = (VulkanFence *)luaL_checkudata(L, 2, "VulkanFence");
+  if (fptr->fence) {
+      vkDestroyFence(dptr->device, fptr->fence, NULL);
+      fptr->fence = VK_NULL_HANDLE;
   }
   return 0;
 }
@@ -1523,12 +1651,15 @@ static const luaL_Reg vulkan_funcs[] = {
   {"vk_AllocateCommandBuffers", l_vk_AllocateCommandBuffers},
   {"vk_BeginCommandBuffer", l_vk_BeginCommandBuffer},
   {"vk_CmdBeginRenderPass", l_vk_CmdBeginRenderPass},
+  {"vk_CmdPipelineBarrier", l_vk_CmdPipelineBarrier},
   {"vk_CmdBindPipeline", l_vk_CmdBindPipeline},
   {"vk_CmdDraw", l_vk_CmdDraw},
   {"vk_CmdEndRenderPass", l_vk_CmdEndRenderPass},
   {"vk_EndCommandBuffer", l_vk_EndCommandBuffer},
   {"vk_WaitForFences", l_vk_WaitForFences},
   {"vk_ResetFences", l_vk_ResetFences},
+  {"vk_ResetCommandBuffer", l_vk_ResetCommandBuffer}, // Add this line
+  {"vk_DestroyFence", l_vk_DestroyFence},
   {NULL, NULL}
 };
 
@@ -1607,6 +1738,38 @@ int luaopen_vulkan(lua_State *L) {
     lua_setfield(L, -2, "VK_COLOR_SPACE_SRGB_NONLINEAR_KHR");
     lua_pushinteger(L, VK_PRESENT_MODE_FIFO_KHR);
     lua_setfield(L, -2, "VK_PRESENT_MODE_FIFO_KHR");
+
+    // Pipeline stage flags
+    lua_pushinteger(L, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    lua_setfield(L, -2, "VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT");
+    lua_pushinteger(L, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+    lua_setfield(L, -2, "VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT");
+
+    // Image layouts
+    lua_pushinteger(L, VK_IMAGE_LAYOUT_UNDEFINED);
+    lua_setfield(L, -2, "VK_IMAGE_LAYOUT_UNDEFINED");
+    lua_pushinteger(L, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    lua_setfield(L, -2, "VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL");
+    lua_pushinteger(L, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    lua_setfield(L, -2, "VK_IMAGE_LAYOUT_PRESENT_SRC_KHR");
+
+    // Structure types
+    lua_pushinteger(L, VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER);
+    lua_setfield(L, -2, "VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER");
+
+    // Queue family constants
+    lua_pushinteger(L, VK_QUEUE_FAMILY_IGNORED);
+    lua_setfield(L, -2, "VK_QUEUE_FAMILY_IGNORED");
+
+    // Image aspect flags
+    lua_pushinteger(L, VK_IMAGE_ASPECT_COLOR_BIT);
+    lua_setfield(L, -2, "VK_IMAGE_ASPECT_COLOR_BIT");
+
+    // Access masks
+    lua_pushinteger(L, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+    lua_setfield(L, -2, "VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT");
+    lua_pushinteger(L, VK_ACCESS_MEMORY_READ_BIT);
+    lua_setfield(L, -2, "VK_ACCESS_MEMORY_READ_BIT");
 
     lua_pushcfunction(L, l_vk_make_version);
     lua_setfield(L, -2, "make_version");

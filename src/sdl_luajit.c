@@ -114,7 +114,6 @@ static int l_sdl_SDL_DestroyWindow(lua_State *L) {
   return 0;
 }
 
-
 static int l_sdl_SDL_Vulkan_GetInstanceExtensions(lua_State *L) {
   Uint32 extensionCount = 0;
   const char *const *extensionNames = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
@@ -134,8 +133,6 @@ static int l_sdl_SDL_Vulkan_GetInstanceExtensions(lua_State *L) {
 
   return 2;
 }
-
-
 
 static int l_sdl_SDL_Vulkan_CreateSurface(lua_State *L) {
   SDLWindow *wptr = (SDLWindow *)luaL_checkudata(L, 1, "SDLWindow"); // Fixed typo

@@ -221,64 +221,127 @@ local fragShaderModule = assert(vulkan.vk_CreateShaderModule(device, fragShaderC
 -- local fragShaderModule = vulkan.vk_CreateShaderModule(device, fragShaderCode)
 -- if not fragShaderModule then error("Failed to create fragment shader module") end
 
+
 print("vulkan.vk_CreatePipelineLayout")
-local pipelineLayout = vulkan.vk_CreatePipelineLayout(device)
-if not pipelineLayout then error("Failed to create pipeline layout") end
+local pipelineLayout = assert(vulkan.vk_CreatePipelineLayout(device))
 
--- print("vulkan.vk_CreateGraphicsPipelines")
--- local graphicsPipeline = vulkan.vk_CreateGraphicsPipelines(device, {
---     vertexShader = vertShaderModule,
---     fragmentShader = fragShaderModule,
---     pipelineLayout = pipelineLayout,
---     renderPass = renderPass
--- })
--- if not graphicsPipeline then error("Failed to create graphics pipeline") end
--- print("Graphics pipeline created successfully")
+print("vulkan.vk_CreateGraphicsPipelines")
+local graphicsPipeline = assert(vulkan.vk_CreateGraphicsPipelines(device, {
+    vertexShader = vertShaderModule,
+    fragmentShader = fragShaderModule,
+    pipelineLayout = pipelineLayout,
+    renderPass = renderPass
+}))
 
--- print("vulkan.vk_CreateSemaphore")
--- local imageAvailableSemaphore = vulkan.vk_CreateSemaphore(device)
--- if not imageAvailableSemaphore then error("Failed to create image available semaphore") end
--- local renderFinishedSemaphore = vulkan.vk_CreateSemaphore(device)
--- if not renderFinishedSemaphore then error("Failed to create render finished semaphore") end
+-- Create synchronization objects
+local imageAvailableSemaphore = assert(vulkan.vk_CreateSemaphore(device))
+local renderFinishedSemaphore = assert(vulkan.vk_CreateSemaphore(device))
+local inFlightFence = assert(vulkan.vk_CreateFence(device, true)) -- Signaled initially
 
--- print("vulkan.vk_CreateFence")
--- local inFlightFence = vulkan.vk_CreateFence(device, true)
--- if not inFlightFence then error("Failed to create fence") end
+-- Create command pool and buffer
+local commandPool = assert(vulkan.vk_CreateCommandPool(device, graphicsFamily))
+local commandBuffers = assert(vulkan.vk_AllocateCommandBuffers(device, commandPool, 1))
+local cmdBuffer = commandBuffers[1]
 
--- --  Dummy render loop (just clears screen to white for now)
--- print("init loop")
--- local running = true
--- while running do
---     local event = SDL.SDL_PollEvent()
---     if event and event.type == SDL.SDL_QUIT then running = false end
+-- Render loop
+local running = true
+while running do
+    -- Handle SDL events
+    local event = SDL.SDL_PollEvent()
+    -- print("event")
+    -- print(event)
+    while event do
+        -- print("event")
+        local event_type = SDL.SDL_GetEventType(event)
+        if event_type == SDL.SDL_EVENT_QUIT then
+            running = false
+        end
+        event = SDL.SDL_PollEvent()
+    end
+    -- Wait for the previous frame to finish
+    assert(vulkan.vk_WaitForFences(device, inFlightFence))
+    assert(vulkan.vk_ResetFences(device, inFlightFence))
 
---     local imageIndex = vulkan.vk_AcquireNextImageKHR(device, swapchain, nil, imageAvailableSemaphore, inFlightFence)
---     if not imageIndex then error("Failed to acquire next image") end
+    -- Acquire the next swapchain image
+    local imageIndex = assert(vulkan.vk_AcquireNextImageKHR(device, swapchain, nil, imageAvailableSemaphore, nil))
 
---     -- Normally, you'd record a command buffer here, but for now, we'll assume it's done elsewhere
---     local submitInfo = {
---         {
---             waitSemaphores = { imageAvailableSemaphore },
---             -- commandBuffers = { commandBuffer }, -- Placeholder (needs command pool/buffer setup)
---             signalSemaphores = { renderFinishedSemaphore }
---         }
---     }
---     -- Skipping vk_QueueSubmit for now due to missing command buffer
+    -- Reset and record the command buffer for this frame
+    assert(vulkan.vk_ResetCommandBuffer(cmdBuffer))
+    assert(vulkan.vk_BeginCommandBuffer(cmdBuffer))
 
---     local presentInfo = {
---         waitSemaphores = { renderFinishedSemaphore },
---         swapchains = { { swapchain = swapchain, imageIndex = imageIndex } }
---     }
---     local success = vulkan.vk_QueuePresentKHR(presentQueue, presentInfo)
---     if not success then error("Failed to present queue") end
--- end
--- print("finished loop")
+    -- Begin render pass
+    vulkan.vk_CmdBeginRenderPass(cmdBuffer, renderPass, framebuffers[imageIndex + 1])
 
--- Cleanup
+    -- Bind pipeline and draw triangle
+    vulkan.vk_CmdBindPipeline(cmdBuffer, graphicsPipeline)
+    vulkan.vk_CmdDraw(cmdBuffer, 3, 1, 0, 0)
+
+    -- End render pass
+    vulkan.vk_CmdEndRenderPass(cmdBuffer)
+
+    -- Transition swapchain image to PRESENT_SRC_KHR
+    local barrier = {
+      sType = vulkan.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+      oldLayout = vulkan.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      newLayout = vulkan.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+      srcQueueFamilyIndex = vulkan.VK_QUEUE_FAMILY_IGNORED,
+      dstQueueFamilyIndex = vulkan.VK_QUEUE_FAMILY_IGNORED,
+      srcAccessMask = vulkan.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+      dstAccessMask = vulkan.VK_ACCESS_MEMORY_READ_BIT,
+      image = swapchainImages[imageIndex + 1],
+      subresourceRange = {
+          aspectMask = vulkan.VK_IMAGE_ASPECT_COLOR_BIT,
+          baseMipLevel = 0,
+          levelCount = 1,
+          baseArrayLayer = 0,
+          layerCount = 1
+      }
+    }
+    vulkan.vk_CmdPipelineBarrier(cmdBuffer, vulkan.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, vulkan.VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, nil, nil, { barrier })
+
+    -- End command buffer recording
+    assert(vulkan.vk_EndCommandBuffer(cmdBuffer))
+
+    -- Submit the command buffer
+    local submitInfo = {
+        {
+            waitSemaphores = { imageAvailableSemaphore },
+            waitDstStageMask = { "VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT" },
+            commandBuffers = { cmdBuffer },
+            signalSemaphores = { renderFinishedSemaphore }
+        }
+    }
+    assert(vulkan.vk_QueueSubmit(graphicsQueue, submitInfo, inFlightFence))
+
+    -- Present the image
+    local presentInfo = {
+        waitSemaphores = { renderFinishedSemaphore },
+        swapchains = { { swapchain = swapchain, imageIndex = imageIndex } }
+    }
+    assert(vulkan.vk_QueuePresentKHR(presentQueue, presentInfo))
+end
+
+
 local function cleanup()
-    print("Starting cleanup...")
-    SDL.SDL_DestroyWindow(window)
-    SDL.SDL_Quit()
+  print("Starting cleanup...")
+  vulkan.vk_DestroyFence(device, inFlightFence)
+  vulkan.vk_DestroySemaphore(device, renderFinishedSemaphore)
+  vulkan.vk_DestroySemaphore(device, imageAvailableSemaphore)
+  vulkan.vk_FreeCommandBuffers(device, commandPool, commandBuffers)
+  vulkan.vk_DestroyCommandPool(device, commandPool)
+  vulkan.vk_DestroyPipeline(device, graphicsPipeline)
+  vulkan.vk_DestroyPipelineLayout(device, pipelineLayout)
+  vulkan.vk_DestroyShaderModule(device, fragShaderModule)
+  vulkan.vk_DestroyShaderModule(device, vertShaderModule)
+  for _, fb in ipairs(framebuffers) do vulkan.vk_DestroyFramebuffer(device, fb) end
+  vulkan.vk_DestroyRenderPass(device, renderPass)
+  for _, view in ipairs(imageViews) do vulkan.vk_DestroyImageView(device, view) end
+  vulkan.vk_DestroySwapchainKHR(device, swapchain)
+  vulkan.vk_DestroyDevice(device)
+  vulkan.vk_DestroySurfaceKHR(instance, surface)
+  vulkan.vk_DestroyInstance(instance)
+  SDL.SDL_DestroyWindow(window)
+  SDL.SDL_Quit()
 end
 
 cleanup()

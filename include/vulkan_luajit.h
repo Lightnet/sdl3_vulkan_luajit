@@ -81,6 +81,12 @@ typedef struct {
   VkDevice device;
 } VulkanCommandPool;
 
+typedef struct {
+  VkCommandBuffer commandBuffer;
+  // Possibly other fields like VkDevice for cleanup
+} VulkanCommandBuffer;
+
+
 int luaopen_vulkan(lua_State *L);
 
 #endif
