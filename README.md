@@ -2,8 +2,15 @@
 
 # License: MIT
 
+# Status:
+ * current api wrapper does not work.
+ * working from ground up for vulkan wrapper which not correct as it skip many steps.
+ * Reason to relfect on C to Lua. Lua has different format which does not work on C code.
+
 # Information:
 A lightweight prototype integrating SDL3, Vulkan, and LuaJIT to create a simple graphics application scripted in Lua. This project draws a colorful triangle on screen as a proof-of-concept, inspired by the simplicity of Raylib's Lua bindings, but built from scratch with Vulkan for rendering and SDL3 for windowing.
+
+
 
 ## Notes:
  * Needs work on readme doc.
