@@ -1200,7 +1200,6 @@ static int l_vk_BeginCommandBuffer(lua_State *L) {
   return 1;
 }
 
-
 static int l_vk_CmdBeginRenderPass(lua_State *L) {
   VulkanCommandBuffer *cptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
   VulkanRenderPass *rpptr = (VulkanRenderPass *)luaL_checkudata(L, 2, "VulkanRenderPass");
@@ -1220,8 +1219,6 @@ static int l_vk_CmdBeginRenderPass(lua_State *L) {
   return 0;
 }
 
-
-
 static int l_vk_CmdBindPipeline(lua_State *L) {
   VulkanCommandBuffer *cptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
   VulkanPipeline *pptr = (VulkanPipeline *)luaL_checkudata(L, 2, "VulkanPipeline");
@@ -1229,7 +1226,6 @@ static int l_vk_CmdBindPipeline(lua_State *L) {
   vkCmdBindPipeline(cptr->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pptr->pipeline);
   return 0;
 }
-
 
 static int l_vk_CmdDraw(lua_State *L) {
   VulkanCommandBuffer *cptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
@@ -1241,7 +1237,6 @@ static int l_vk_CmdDraw(lua_State *L) {
   vkCmdDraw(cptr->commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
   return 0;
 }
-
 
 static int l_vk_CmdEndRenderPass(lua_State *L) {
   VulkanCommandBuffer *cptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
@@ -1265,7 +1260,6 @@ static int l_vk_EndCommandBuffer(lua_State *L) {
   return 1;
 }
 
-
 static int l_vk_ResetCommandBuffer(lua_State *L) {
   VulkanCommandBuffer *cptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
   VkResult result = vkResetCommandBuffer(cptr->commandBuffer, 0);
@@ -1279,8 +1273,6 @@ static int l_vk_ResetCommandBuffer(lua_State *L) {
   lua_pushboolean(L, true);
   return 1;
 }
-
-
 
 static int l_vk_CmdPipelineBarrier(lua_State *L) {
   VulkanCommandBuffer *cptr = (VulkanCommandBuffer *)luaL_checkudata(L, 1, "VulkanCommandBuffer");
@@ -1381,7 +1373,6 @@ static int l_vk_CmdPipelineBarrier(lua_State *L) {
   return 0;
 }
 
-
 static int l_vk_WaitForFences(lua_State *L) {
   VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
   VulkanFence *fptr = (VulkanFence *)luaL_checkudata(L, 2, "VulkanFence");
@@ -1416,7 +1407,6 @@ static int l_vk_ResetFences(lua_State *L) {
   return 1;
 }
 
-
 static int l_vk_QueueWaitIdle(lua_State *L) {
   VulkanQueue *qptr = (VulkanQueue *)luaL_checkudata(L, 1, "VulkanQueue");
   VkResult result = vkQueueWaitIdle(qptr->queue);
@@ -1440,7 +1430,6 @@ static int l_vk_DestroySemaphore(lua_State *L) {
   }
   return 0;
 }
-
 
 static int l_vk_DestroyFence(lua_State *L) {
   VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
@@ -1472,6 +1461,96 @@ static int l_vk_DestroyPipeline(lua_State *L) {
   return 0;
 }
 
+static int l_vk_DestroyPipelineLayout(lua_State *L) {
+  VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanPipelineLayout *plptr = (VulkanPipelineLayout *)luaL_checkudata(L, 2, "VulkanPipelineLayout");
+  if (plptr->pipelineLayout) {
+      vkDestroyPipelineLayout(dptr->device, plptr->pipelineLayout, NULL);
+      plptr->pipelineLayout = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+static int l_vk_DestroyShaderModule(lua_State *L) {
+  VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanShaderModule *smptr = (VulkanShaderModule *)luaL_checkudata(L, 2, "VulkanShaderModule");
+  if (smptr->shaderModule) {
+      vkDestroyShaderModule(dptr->device, smptr->shaderModule, NULL);
+      smptr->shaderModule = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+static int l_vk_DestroyFramebuffer(lua_State *L) {
+  VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanFramebuffer *fbptr = (VulkanFramebuffer *)luaL_checkudata(L, 2, "VulkanFramebuffer");
+  if (fbptr->framebuffer) {
+      vkDestroyFramebuffer(dptr->device, fbptr->framebuffer, NULL);
+      fbptr->framebuffer = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+static int l_vk_DestroyRenderPass(lua_State *L) {
+  VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanRenderPass *rpptr = (VulkanRenderPass *)luaL_checkudata(L, 2, "VulkanRenderPass");
+  if (rpptr->renderPass) {
+      vkDestroyRenderPass(dptr->device, rpptr->renderPass, NULL);
+      rpptr->renderPass = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+static int l_vk_DestroyImageView(lua_State *L) {
+  VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanImageView *viewptr = (VulkanImageView *)luaL_checkudata(L, 2, "VulkanImageView");
+  if (viewptr->imageView) {
+      vkDestroyImageView(dptr->device, viewptr->imageView, NULL);
+      viewptr->imageView = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+static int l_vk_DestroySwapchainKHR(lua_State *L) {
+  VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  VulkanSwapchain *swptr = (VulkanSwapchain *)luaL_checkudata(L, 2, "VulkanSwapchain");
+  if (swptr->swapchain) {
+      vkDestroySwapchainKHR(dptr->device, swptr->swapchain, NULL);
+      swptr->swapchain = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+static int l_vk_DestroyDevice(lua_State *L) {
+  VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
+  if (dptr->device) {
+      vkDestroyDevice(dptr->device, NULL);
+      dptr->device = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+static int l_vk_DestroyInstance(lua_State *L) {
+  VulkanInstance *iptr = (VulkanInstance *)luaL_checkudata(L, 1, "VulkanInstance");
+  if (iptr->instance) {
+      vkDestroyInstance(iptr->instance, NULL);
+      iptr->instance = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+static int l_vk_DestroySurfaceKHR(lua_State *L) {
+  VulkanInstance *iptr = (VulkanInstance *)luaL_checkudata(L, 1, "VulkanInstance");
+  VulkanSurface *sptr = (VulkanSurface *)luaL_checkudata(L, 2, "VulkanSurface");
+  if (sptr->surface) {
+      vkDestroySurfaceKHR(iptr->instance, sptr->surface, NULL);
+      sptr->surface = VK_NULL_HANDLE;
+  }
+  return 0;
+}
+
+
+
 static int l_vk_commandpool_gc(lua_State *L) {
   VulkanCommandPool *cpptr = (VulkanCommandPool *)luaL_checkudata(L, 1, "VulkanCommandPool");
   if (cpptr->commandPool) {
@@ -1480,8 +1559,6 @@ static int l_vk_commandpool_gc(lua_State *L) {
   }
   return 0;
 }
-
-
 
 static int l_vk_swapchain_gc(lua_State *L) {
   VulkanSwapchain *swptr = (VulkanSwapchain *)luaL_checkudata(L, 1, "VulkanSwapchain");
@@ -1714,6 +1791,15 @@ static const luaL_Reg vulkan_funcs[] = {
   {"vk_WaitForFences", l_vk_WaitForFences},
   {"vk_ResetFences", l_vk_ResetFences},
   {"vk_ResetCommandBuffer", l_vk_ResetCommandBuffer},
+  {"vk_DestroySurfaceKHR", l_vk_DestroySurfaceKHR},
+  {"vk_DestroyPipelineLayout", l_vk_DestroyPipelineLayout},
+  {"vk_DestroyShaderModule", l_vk_DestroyShaderModule},
+  {"vk_DestroyFramebuffer", l_vk_DestroyFramebuffer},
+  {"vk_DestroyRenderPass", l_vk_DestroyRenderPass},
+  {"vk_DestroyImageView", l_vk_DestroyImageView},
+  {"vk_DestroySwapchainKHR", l_vk_DestroySwapchainKHR},
+  {"vk_DestroyDevice", l_vk_DestroyDevice},
+  {"vk_DestroyInstance", l_vk_DestroyInstance},
   {"vk_DestroyFence", l_vk_DestroyFence},
   {"vk_QueueWaitIdle", l_vk_QueueWaitIdle},
   {"vk_DestroySemaphore", l_vk_DestroySemaphore},

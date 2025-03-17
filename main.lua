@@ -32,7 +32,7 @@ local instance = vulkan.create_instance({
 if not instance then error("Failed to create Vulkan instance") end
 
 print("SDL_Vulkan_CreateSurface")
-local surface = SDL.SDL_Vulkan_CreateSurface(window, instance)
+local surface = assert(SDL.SDL_Vulkan_CreateSurface(window, instance))
 if not surface then error("Failed to create Vulkan surface: " .. SDL.SDL_GetError()) end
 
 local physicalDevices = vulkan.vk_EnumeratePhysicalDevices(instance)
@@ -269,6 +269,7 @@ local function cleanup()
     end
     vulkan.vk_DestroySwapchainKHR(device, swapchain)
     vulkan.vk_DestroyDevice(device)
+    vulkan.vk_DestroySurfaceKHR(instance, surface)
     vulkan.vk_DestroyInstance(instance)
     SDL.SDL_DestroyWindow(window)
     SDL.SDL_Quit()
