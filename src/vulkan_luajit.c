@@ -707,8 +707,6 @@ static int l_vk_CreateShaderModule(lua_State *L) {
   return 1;
 }
 
-
-
 static int l_vk_CreatePipelineLayout(lua_State *L) {
   VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
 
@@ -950,7 +948,6 @@ static int l_vk_AcquireNextImageKHR(lua_State *L) {
   return 1;
 }
 
-
 static int l_vk_QueueSubmit(lua_State *L) {
   VulkanQueue *qptr = (VulkanQueue *)luaL_checkudata(L, 1, "VulkanQueue");
   luaL_checktype(L, 2, LUA_TTABLE);
@@ -1046,7 +1043,6 @@ static int l_vk_QueueSubmit(lua_State *L) {
   return 1;
 }
 
-
 static int l_vk_QueuePresentKHR(lua_State *L) {
   VulkanQueue *qptr = (VulkanQueue *)luaL_checkudata(L, 1, "VulkanQueue");
   luaL_checktype(L, 2, LUA_TTABLE);
@@ -1141,7 +1137,6 @@ static int l_vk_CreateCommandPool(lua_State *L) {
   lua_setmetatable(L, -2);
   return 1;
 }
-
 
 static int l_vk_AllocateCommandBuffers(lua_State *L) {
   VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
@@ -1407,6 +1402,7 @@ static int l_vk_ResetFences(lua_State *L) {
   return 1;
 }
 
+// Update vk_QueueWaitIdle to return true on success
 static int l_vk_QueueWaitIdle(lua_State *L) {
   VulkanQueue *qptr = (VulkanQueue *)luaL_checkudata(L, 1, "VulkanQueue");
   VkResult result = vkQueueWaitIdle(qptr->queue);
@@ -1428,7 +1424,8 @@ static int l_vk_DestroySemaphore(lua_State *L) {
       vkDestroySemaphore(dptr->device, sptr->semaphore, NULL);
       sptr->semaphore = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true); // Return true on success
+  return 1;
 }
 
 static int l_vk_DestroyFence(lua_State *L) {
@@ -1438,17 +1435,19 @@ static int l_vk_DestroyFence(lua_State *L) {
       vkDestroyFence(dptr->device, fptr->fence, NULL);
       fptr->fence = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true); // Return true on success
+  return 1;
 }
 
 static int l_vk_DestroyCommandPool(lua_State *L) {
   VulkanDevice *dptr = (VulkanDevice *)luaL_checkudata(L, 1, "VulkanDevice");
-  VulkanCommandPool *cptr = (VulkanCommandPool *)luaL_checkudata(L, 2, "VulkanCommandPool");
-  if (cptr->commandPool) {
-      vkDestroyCommandPool(dptr->device, cptr->commandPool, NULL);
-      cptr->commandPool = VK_NULL_HANDLE;
+  VulkanCommandPool *cpptr = (VulkanCommandPool *)luaL_checkudata(L, 2, "VulkanCommandPool");
+  if (cpptr->commandPool) {
+      vkDestroyCommandPool(dptr->device, cpptr->commandPool, NULL);
+      cpptr->commandPool = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true); // Return true on success
+  return 1;
 }
 
 static int l_vk_DestroyPipeline(lua_State *L) {
@@ -1458,7 +1457,8 @@ static int l_vk_DestroyPipeline(lua_State *L) {
       vkDestroyPipeline(dptr->device, pptr->pipeline, NULL);
       pptr->pipeline = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true);
+  return 1;
 }
 
 static int l_vk_DestroyPipelineLayout(lua_State *L) {
@@ -1468,7 +1468,8 @@ static int l_vk_DestroyPipelineLayout(lua_State *L) {
       vkDestroyPipelineLayout(dptr->device, plptr->pipelineLayout, NULL);
       plptr->pipelineLayout = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true);
+  return 1;
 }
 
 static int l_vk_DestroyShaderModule(lua_State *L) {
@@ -1478,7 +1479,8 @@ static int l_vk_DestroyShaderModule(lua_State *L) {
       vkDestroyShaderModule(dptr->device, smptr->shaderModule, NULL);
       smptr->shaderModule = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true);
+  return 1;
 }
 
 static int l_vk_DestroyFramebuffer(lua_State *L) {
@@ -1488,7 +1490,8 @@ static int l_vk_DestroyFramebuffer(lua_State *L) {
       vkDestroyFramebuffer(dptr->device, fbptr->framebuffer, NULL);
       fbptr->framebuffer = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true);
+  return 1;
 }
 
 static int l_vk_DestroyRenderPass(lua_State *L) {
@@ -1498,7 +1501,8 @@ static int l_vk_DestroyRenderPass(lua_State *L) {
       vkDestroyRenderPass(dptr->device, rpptr->renderPass, NULL);
       rpptr->renderPass = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true);
+  return 1;
 }
 
 static int l_vk_DestroyImageView(lua_State *L) {
@@ -1508,7 +1512,8 @@ static int l_vk_DestroyImageView(lua_State *L) {
       vkDestroyImageView(dptr->device, viewptr->imageView, NULL);
       viewptr->imageView = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true);
+  return 1;
 }
 
 static int l_vk_DestroySwapchainKHR(lua_State *L) {
@@ -1518,7 +1523,8 @@ static int l_vk_DestroySwapchainKHR(lua_State *L) {
       vkDestroySwapchainKHR(dptr->device, swptr->swapchain, NULL);
       swptr->swapchain = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true);
+  return 1;
 }
 
 static int l_vk_DestroyDevice(lua_State *L) {
@@ -1527,7 +1533,8 @@ static int l_vk_DestroyDevice(lua_State *L) {
       vkDestroyDevice(dptr->device, NULL);
       dptr->device = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true);
+  return 1;
 }
 
 static int l_vk_DestroyInstance(lua_State *L) {
@@ -1536,7 +1543,8 @@ static int l_vk_DestroyInstance(lua_State *L) {
       vkDestroyInstance(iptr->instance, NULL);
       iptr->instance = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true);
+  return 1;
 }
 
 static int l_vk_DestroySurfaceKHR(lua_State *L) {
@@ -1546,10 +1554,9 @@ static int l_vk_DestroySurfaceKHR(lua_State *L) {
       vkDestroySurfaceKHR(iptr->instance, sptr->surface, NULL);
       sptr->surface = VK_NULL_HANDLE;
   }
-  return 0;
+  lua_pushboolean(L, true);
+  return 1;
 }
-
-
 
 static int l_vk_commandpool_gc(lua_State *L) {
   VulkanCommandPool *cpptr = (VulkanCommandPool *)luaL_checkudata(L, 1, "VulkanCommandPool");
@@ -1659,7 +1666,6 @@ static int l_vk_device_gc(lua_State *L) {
   return 0;
 }
 
-
 static int l_vk_EnumerateInstanceLayerProperties(lua_State *L) {
   uint32_t layerCount;
   vkEnumerateInstanceLayerProperties(&layerCount, NULL);
@@ -1742,7 +1748,6 @@ static const luaL_Reg fence_mt[] = {
   {NULL, NULL}
 };
 
-
 static const luaL_Reg vulkancommandpool_mt[] = {
   {"__gc", l_vk_commandpool_gc},
   {NULL, NULL}
@@ -1751,7 +1756,6 @@ static const luaL_Reg vulkancommandpool_mt[] = {
 static const luaL_Reg vulkancommandbuffer_mt[] = {
   {NULL, NULL}
 };
-
 
 static const luaL_Reg vulkan_funcs[] = {
   {"vk_EnumerateInstanceLayerProperties", l_vk_EnumerateInstanceLayerProperties},

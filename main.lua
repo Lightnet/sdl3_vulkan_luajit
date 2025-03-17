@@ -246,34 +246,34 @@ end
 
 -- Cleanup function (unchanged from your original)
 local function cleanup()
-    print("Starting cleanup...")
-    vulkan.vk_QueueWaitIdle(graphicsQueue)
-    vulkan.vk_QueueWaitIdle(presentQueue)
+  print("Starting cleanup...")
+  assert(vulkan.vk_QueueWaitIdle(graphicsQueue))
+  assert(vulkan.vk_QueueWaitIdle(presentQueue))
 
-    for i = 1, #inFlightFences do
-        vulkan.vk_DestroyFence(device, inFlightFences[i])
-        vulkan.vk_DestroySemaphore(device, renderFinishedSemaphores[i])
-        vulkan.vk_DestroySemaphore(device, imageAvailableSemaphores[i])
-    end
-    vulkan.vk_DestroyCommandPool(device, commandPool)
-    vulkan.vk_DestroyPipeline(device, pipeline)
-    vulkan.vk_DestroyPipelineLayout(device, pipelineLayout)
-    vulkan.vk_DestroyShaderModule(device, fragShaderModule)
-    vulkan.vk_DestroyShaderModule(device, vertShaderModule)
-    for i = 1, #framebuffers do
-        vulkan.vk_DestroyFramebuffer(device, framebuffers[i])
-    end
-    vulkan.vk_DestroyRenderPass(device, renderPass)
-    for i = 1, #imageViews do
-        vulkan.vk_DestroyImageView(device, imageViews[i])
-    end
-    vulkan.vk_DestroySwapchainKHR(device, swapchain)
-    vulkan.vk_DestroyDevice(device)
-    vulkan.vk_DestroySurfaceKHR(instance, surface)
-    vulkan.vk_DestroyInstance(instance)
-    SDL.SDL_DestroyWindow(window)
-    SDL.SDL_Quit()
-    print("Done.")
+  for i = 1, #inFlightFences do
+      assert(vulkan.vk_DestroyFence(device, inFlightFences[i]))
+      assert(vulkan.vk_DestroySemaphore(device, renderFinishedSemaphores[i]))
+      assert(vulkan.vk_DestroySemaphore(device, imageAvailableSemaphores[i]))
+  end
+  assert(vulkan.vk_DestroyCommandPool(device, commandPool))
+  assert(vulkan.vk_DestroyPipeline(device, pipeline))
+  assert(vulkan.vk_DestroyPipelineLayout(device, pipelineLayout))
+  assert(vulkan.vk_DestroyShaderModule(device, fragShaderModule))
+  assert(vulkan.vk_DestroyShaderModule(device, vertShaderModule))
+  for i = 1, #framebuffers do
+      assert(vulkan.vk_DestroyFramebuffer(device, framebuffers[i]))
+  end
+  assert(vulkan.vk_DestroyRenderPass(device, renderPass))
+  for i = 1, #imageViews do
+      assert(vulkan.vk_DestroyImageView(device, imageViews[i]))
+  end
+  assert(vulkan.vk_DestroySwapchainKHR(device, swapchain))
+  assert(vulkan.vk_DestroyDevice(device))
+  assert(vulkan.vk_DestroySurfaceKHR(instance, surface))
+  assert(vulkan.vk_DestroyInstance(instance))
+  SDL.SDL_DestroyWindow(window)
+  SDL.SDL_Quit()
+  print("Done.")
 end
 
 cleanup()

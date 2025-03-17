@@ -7,7 +7,6 @@ typedef struct {
     SDL_Window *window;
 } SDLWindow;
 
-
 static int l_sdl_SDL_Init(lua_State *L) {
     Uint32 flags = (Uint32)luaL_checkinteger(L, 1);
     bool success = SDL_Init(flags);
